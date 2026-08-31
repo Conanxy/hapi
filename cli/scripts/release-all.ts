@@ -49,6 +49,26 @@ function run(cmd: string, cwd = projectRoot): void {
     }
 }
 
+function packageVersionExists(name: string, expectedVersion: string): boolean {
+    try {
+        const published = execSync(
+            `npm view ${name}@${expectedVersion} version`,
+            { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }
+        ).trim();
+        return published === expectedVersion;
+    } catch {
+        return false;
+    }
+}
+
+function publishPackage(name: string, cwd: string, provenanceFlag: string): void {
+    if (!dryRun && packageVersionExists(name, version!)) {
+        console.log(`   ✓ ${name}@${version} already published; skipping`);
+        return;
+    }
+    run(`npm publish --access public${provenanceFlag}${dryRun ? ' --dry-run' : ''}`, cwd);
+}
+
 function updateBuildInfoVersion(nextVersion: string): void {
     const content = readFileSync(buildInfoPath, 'utf-8');
     if (!/export const APP_VERSION = ['"][^'"]+['"]/.test(content)) {
@@ -165,7 +185,7 @@ async function main(): Promise<void> {
     const provenanceFlag = process.env.GITHUB_ACTIONS === 'true' ? ' --provenance' : '';
     for (const platform of platforms) {
         const npmDir = join(projectRoot, 'npm', platform);
-        run(`npm publish --access public${provenanceFlag}${dryRun ? ' --dry-run' : ''}`, npmDir);
+        publishPackage(`${NPM_SCOPE}/hapi-${platform}`, npmDir, provenanceFlag);
     }
 
     // Step 4: Verify all platform packages are live on npm before publishing the main package.
@@ -181,7 +201,7 @@ async function main(): Promise<void> {
     // Step 5: Publish main package
     console.log('\n📤 Step 5: Publishing main package...');
     const mainNpmDir = join(projectRoot, 'npm', 'main');
-    run(`npm publish --access public${provenanceFlag}${dryRun ? ' --dry-run' : ''}`, mainNpmDir);
+    publishPackage(MAIN_PACKAGE, mainNpmDir, provenanceFlag);
 
     // --publish-npm 模式到此结束
     if (publishNpm) {
