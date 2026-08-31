@@ -9,7 +9,7 @@ import {
 } from './textContext'
 
 describe('text context rules', () => {
-    it('converts pasted text at 1500 characters', () => {
+    it('converts pasted text at 3000 characters', () => {
         expect(shouldConvertPastedTextToContext(
             'x'.repeat(AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD - 1),
         )).toBe(false)
@@ -18,12 +18,26 @@ describe('text context rules', () => {
         )).toBe(true)
     })
 
-    it('converts pasted text only after it exceeds 30 lines', () => {
+    it('converts pasted text only after it exceeds 60 lines', () => {
         expect(shouldConvertPastedTextToContext(
-            Array.from({ length: 30 }, (_, index) => `line ${index}`).join('\n'),
+            Array.from({ length: 60 }, (_, index) => `line ${index}`).join('\n'),
         )).toBe(false)
         expect(shouldConvertPastedTextToContext(
-            Array.from({ length: 31 }, (_, index) => `line ${index}`).join('\n'),
+            Array.from({ length: 61 }, (_, index) => `line ${index}`).join('\n'),
+        )).toBe(true)
+    })
+
+    it('supports custom character and line thresholds', () => {
+        expect(shouldConvertPastedTextToContext('x'.repeat(2_000), {
+            characterThreshold: 2_000,
+            lineThreshold: 100,
+        })).toBe(true)
+        expect(shouldConvertPastedTextToContext(
+            Array.from({ length: 21 }, (_, index) => `line ${index}`).join('\n'),
+            {
+                characterThreshold: 10_000,
+                lineThreshold: 20,
+            },
         )).toBe(true)
     })
 

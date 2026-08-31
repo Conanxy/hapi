@@ -59,8 +59,9 @@ See `src/router.tsx` for route definitions.
 - Separate file and text-context actions in the composer. Text context is
   converted to a UTF-8 `.txt` attachment so the message body can remain a
   concise request.
-- Pasted text becomes a context attachment at 1,500 characters or more than
-  30 lines; sent user messages longer than 15 lines are collapsed by default.
+- Pasted text becomes a context attachment at 3,000 characters or more than
+  60 lines by default; both thresholds are configurable in Chat settings.
+  Sent user messages longer than 15 lines are collapsed by default.
 - Clipboard files use the same generic attachment path as file picks and
   drag-and-drop.
 - Permission mode toggle (default/acceptEdits/auto/bypassPermissions/plan).

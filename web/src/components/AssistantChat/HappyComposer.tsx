@@ -70,6 +70,7 @@ import {
     insertTextAtSelection,
     shouldConvertPastedTextToContext,
 } from '@/lib/textContext'
+import { useTextContextPreferences } from '@/hooks/useTextContextPreferences'
 
 export interface TextInputState {
     text: string
@@ -463,6 +464,10 @@ export function HappyComposer(props: {
     const displayedServiceTier = getDisplayedCodexServiceTier(serviceTier)
 
     const api = useAui()
+    const {
+        characterThreshold: textContextCharacterThreshold,
+        lineThreshold: textContextLineThreshold,
+    } = useTextContextPreferences()
     const { composerEnterBehavior } = useComposerEnterBehavior()
     const composerText = useAuiState((s) => s.composer.text)
     const attachments = useAuiState((s) => s.composer.attachments)
@@ -1428,7 +1433,10 @@ export function HappyComposer(props: {
         if (
             pendingSchedule != null
             || props.scratchlistMode
-            || !shouldConvertPastedTextToContext(pastedText)
+            || !shouldConvertPastedTextToContext(pastedText, {
+                characterThreshold: textContextCharacterThreshold,
+                lineThreshold: textContextLineThreshold,
+            })
         ) {
             return
         }
@@ -1457,7 +1465,15 @@ export function HappyComposer(props: {
                 input.focus()
             }, 0)
         }
-    }, [api, handleUserEdit, pendingSchedule, props.scratchlistMode, richMentionsEnabled])
+    }, [
+        api,
+        handleUserEdit,
+        pendingSchedule,
+        props.scratchlistMode,
+        richMentionsEnabled,
+        textContextCharacterThreshold,
+        textContextLineThreshold,
+    ])
 
     const handleAddTextContext = useCallback(async (text: string, name: string) => {
         await api.composer().addAttachment(createTextContextFile(text, name))

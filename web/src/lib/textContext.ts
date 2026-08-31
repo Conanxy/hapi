@@ -1,5 +1,5 @@
-export const AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD = 1_500
-export const AUTO_TEXT_CONTEXT_LINE_THRESHOLD = 30
+export const AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD = 3_000
+export const AUTO_TEXT_CONTEXT_LINE_THRESHOLD = 60
 export const USER_MESSAGE_COLLAPSED_LINE_LIMIT = 15
 
 function splitTextLines(text: string): string[] {
@@ -10,9 +10,19 @@ export function countTextLines(text: string): number {
     return text.length === 0 ? 0 : splitTextLines(text).length
 }
 
-export function shouldConvertPastedTextToContext(text: string): boolean {
-    return text.length >= AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD
-        || countTextLines(text) > AUTO_TEXT_CONTEXT_LINE_THRESHOLD
+export function shouldConvertPastedTextToContext(
+    text: string,
+    thresholds: {
+        characterThreshold?: number
+        lineThreshold?: number
+    } = {},
+): boolean {
+    const characterThreshold = thresholds.characterThreshold
+        ?? AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD
+    const lineThreshold = thresholds.lineThreshold
+        ?? AUTO_TEXT_CONTEXT_LINE_THRESHOLD
+    return text.length >= characterThreshold
+        || countTextLines(text) > lineThreshold
 }
 
 export function getCollapsedUserMessage(
