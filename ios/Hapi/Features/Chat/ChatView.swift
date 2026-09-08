@@ -52,8 +52,13 @@ struct ChatView: View {
                 ChatTranscriptView(model: model)
             }
         }
+        // Reconnection must not resize the transcript and trigger its
+        // viewport/bottom-follow layout handlers. Keep it below any warning.
+        .overlay(alignment: .top) {
+            reconnectNotice
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
-            banners
+            warningBanner
         }
         // Toast overlays the thread; applying it before the bottom inset
         // anchors it just above the composer instead of on top of it.
@@ -202,33 +207,40 @@ struct ChatView: View {
     }
 
     @ViewBuilder
-    private var banners: some View {
-        VStack(spacing: 0) {
-            if let warning = model.warning {
-                HStack(spacing: 8) {
-                    Text(LocalizedNoticeMapper.map(warning))
-                        .font(.footnote)
-                        .lineLimit(2)
-                    Spacer(minLength: 8)
-                    Button("Retry") {
-                        model.retry()
-                    }
-                    .font(.footnote.weight(.semibold))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .background(.red.opacity(0.14))
-                .foregroundStyle(.red)
-            }
-            if case .backoff = model.connectionState {
-                Text("Live updates interrupted — reconnecting…")
+    private var warningBanner: some View {
+        if let warning = model.warning {
+            HStack(spacing: 8) {
+                Text(LocalizedNoticeMapper.map(warning))
                     .font(.footnote)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
-                    .background(.orange.opacity(0.15))
-                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                Button("Retry") {
+                    model.retry()
+                }
+                .font(.footnote.weight(.semibold))
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .background(.red.opacity(0.14))
+            .foregroundStyle(.red)
+        }
+    }
+
+    @ViewBuilder
+    private var reconnectNotice: some View {
+        if model.isReconnecting {
+            Text("Live updates interrupted — reconnecting…")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .foregroundStyle(.orange)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(radius: 4, y: 2)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .allowsHitTesting(false)
         }
     }
 
