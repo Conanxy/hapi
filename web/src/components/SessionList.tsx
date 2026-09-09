@@ -51,6 +51,7 @@ import { SessionRowSummary } from '@/components/SessionRowSummary'
 import { Spinner } from '@/components/Spinner'
 import { transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 import { useToast } from '@/lib/toast-context'
+import { getPathDisplayName } from '@/utils/path'
 
 export { getWorktreeSessionLabel } from '@/lib/sessionWorktreeLabel'
 
@@ -174,14 +175,6 @@ type MachineGroup = {
     hasActiveSession: boolean
     hasPinnedSession: boolean
     latestUpdatedAt: number
-}
-
-function getGroupDisplayName(directory: string): string {
-    if (directory === 'Other') return directory
-    const parts = directory.split(/[\\/]+/).filter(Boolean)
-    if (parts.length === 0) return directory
-    if (parts.length === 1) return parts[0]
-    return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`
 }
 
 export const UNKNOWN_MACHINE_ID = '__unknown__'
@@ -314,7 +307,7 @@ function groupSessionsByDirectory(sessions: SessionSummary[]): SessionGroup[] {
             )
             const hasActiveSession = group.sessions.some(s => s.active)
             const hasPinnedSession = group.sessions.some(s => s.pinned)
-            const displayName = getGroupDisplayName(group.directory)
+            const displayName = getPathDisplayName(group.directory)
 
             return {
                 key,
@@ -1536,7 +1529,7 @@ export function SessionList(props: {
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
                                             inRunningSection
-                                            projectLabel={getGroupDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
+                                            projectLabel={getPathDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
                                             lastSeenVersion={lastSeenVersion}
                                         />
@@ -2029,7 +2022,7 @@ export function SessionList(props: {
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
                                             inRunningSection
-                                            projectLabel={getGroupDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
+                                            projectLabel={getPathDisplayName(s.metadata?.worktree?.basePath ?? s.metadata?.path ?? 'Other')}
                                             machineLabel={resolveMachineLabel(s.metadata?.machineId ?? null)}
                                             lastSeenVersion={lastSeenVersion}
                                         />
