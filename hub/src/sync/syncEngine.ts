@@ -48,6 +48,7 @@ import {
     type RpcArchiveCodexSessionResponse,
     type RpcListCursorModelsResponse,
     type RpcListOpencodeModelsResponse,
+    type RpcListOpencodeModelVariantsResponse,
     type RpcListGrokModelsResponse,
     type RpcListCopilotModelsResponse,
     type RpcListGrokReasoningEffortOptionsResponse,
@@ -81,6 +82,7 @@ export type {
     RpcListPiSessionsResponse,
     RpcListCursorModelsResponse,
     RpcListOpencodeModelsResponse,
+    RpcListOpencodeModelVariantsResponse,
     RpcListGrokModelsResponse,
     RpcListCopilotModelsResponse,
     RpcListGrokReasoningEffortOptionsResponse,
@@ -3926,6 +3928,10 @@ export class SyncEngine {
 
     async listCodexModelsForMachine(machineId: string): Promise<RpcListCodexModelsResponse> {
         return await this.rpcGateway.listCodexModelsForMachine(machineId)
+    }
+
+    async listOpencodeModelVariantsForMachine(machineId: string, cwd?: string | null): Promise<RpcListOpencodeModelVariantsResponse> {
+        return await this.rpcGateway.listOpencodeModelVariantsForMachine(machineId, cwd)
     }
 
     async listCodexModelsForSession(sessionId: string): Promise<RpcListCodexModelsResponse> {
