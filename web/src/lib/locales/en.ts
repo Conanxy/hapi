@@ -1,4 +1,11 @@
 export default {
+  'codexUsage.title': 'Codex Usage',
+  'codexUsage.ordinary': 'Ordinary usage',
+  'codexUsage.unknown': 'Unknown',
+  'codexUsage.remaining': '{percent}% remaining',
+  'codexUsage.window': '{minutes} min window',
+  'codexUsage.resets': 'Resets {time}',
+
   // Loading states
   'loading': 'Loading…',
   'authorizing': 'Authorizing…',
