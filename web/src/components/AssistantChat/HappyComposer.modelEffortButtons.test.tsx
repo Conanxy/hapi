@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactNode, TextareaHTMLAttributes } from 'react'
 import { useRef, useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import type { ComposerSendIntent } from '@/lib/messageDelivery'
@@ -36,6 +36,7 @@ const runtime = vi.hoisted(() => ({
     sentIntents: [] as ComposerSendIntent[],
     narrowViewport: false,
     toolbarLayout: null as ComposerToolbarLayout | null,
+    cancelRun: vi.fn(),
 }))
 
 vi.mock('@assistant-ui/react', async () => {
@@ -60,7 +61,7 @@ vi.mock('@assistant-ui/react', async () => {
                 },
                 addAttachment: async () => {},
             }),
-            thread: () => ({ cancelRun: () => {} }),
+            thread: () => ({ cancelRun: runtime.cancelRun }),
         }),
         useAuiState: (selector: (state: typeof runtime.snapshot) => unknown) => selector(runtime.snapshot),
         ComposerPrimitive: {
@@ -135,6 +136,78 @@ function renderComposer(agentFlavor: string, overrides: Partial<Parameters<typeo
         </I18nProvider>
     )
 }
+
+describe('HappyComposer Esc interruption', () => {
+    beforeEach(() => {
+        localStorage.clear()
+        localStorage.setItem('hapi.fue.v1.rich-composer-mentions', '1')
+        runtime.snapshot.thread.isRunning = true
+        runtime.cancelRun.mockClear()
+        vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+        cleanup()
+        runtime.snapshot.thread.isRunning = false
+        localStorage.clear()
+        vi.useRealTimers()
+    })
+
+    it.each(['rich', 'plain'])('requires two separate Esc presses in the %s composer', (mode) => {
+        if (mode === 'plain') localStorage.setItem('hapi.composer.richMentions', '0')
+        renderComposer('codex')
+        const input = screen.getByRole('textbox')
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        expect(screen.getByRole('status')).toHaveTextContent('Press Esc again within 2 seconds')
+        fireEvent.keyDown(input, { key: 'Escape', repeat: true })
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(runtime.cancelRun).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+    })
+
+    it('clears confirmation when the input loses focus or the timeout expires', () => {
+        renderComposer('codex')
+        const input = screen.getByRole('textbox')
+        fireEvent.keyDown(input, { key: 'Escape' })
+        fireEvent.blur(input)
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        act(() => vi.advanceTimersByTime(2000))
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+    })
+
+    it('retains single-press interruption when selected', () => {
+        localStorage.setItem('hapi-composer-escape-behavior', 'single')
+        renderComposer('codex')
+        fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' })
+        expect(runtime.cancelRun).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+    })
+
+    it('does not gate the stop button behind keyboard confirmation', () => {
+        renderComposer('codex')
+        fireEvent.click(screen.getByRole('button', { name: 'Abort' }))
+        expect(runtime.cancelRun).toHaveBeenCalledTimes(1)
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+    })
+
+    it('dismisses onboarding before starting keyboard confirmation', () => {
+        localStorage.removeItem('hapi.fue.v1.rich-composer-mentions')
+        renderComposer('codex')
+        const input = screen.getByRole('textbox')
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+        expect(screen.queryByText('Interrupt current task?')).toBeNull()
+        fireEvent.keyDown(input, { key: 'Escape' })
+        expect(screen.getByText('Interrupt current task?')).toBeInTheDocument()
+        expect(runtime.cancelRun).not.toHaveBeenCalled()
+    })
+})
 
 describe('HappyComposer generic model/effort value buttons', () => {
     afterEach(() => {

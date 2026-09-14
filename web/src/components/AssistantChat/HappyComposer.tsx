@@ -6,6 +6,7 @@ import {
 } from '@hapi/protocol'
 import { ComposerPrimitive, useAui, useAuiState } from '@assistant-ui/react'
 import { flushTapSync } from '@assistant-ui/tap'
+import { createPortal } from 'react-dom'
 import {
     type ChangeEvent as ReactChangeEvent,
     type ClipboardEvent as ReactClipboardEvent,
@@ -43,6 +44,9 @@ import { useComposerDraft } from '@/hooks/useComposerDraft'
 import type { AttachmentDraftInput } from '@/lib/composer-attachment-drafts'
 import { persistInactiveComposerAttachments, setComposerDraftSnapshot, updateComposerDraftTextSnapshot, attachmentDraftRevision, resetInactiveComposerAttachmentVisibility } from '@/lib/composer-draft-transfer'
 import { useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
+import { useComposerEscapeBehavior } from '@/hooks/useComposerEscapeBehavior'
+import { useComposerEscapeAbort } from '@/hooks/useComposerEscapeAbort'
+import { Toast } from '@/components/ui/Toast'
 import { FloatingOverlay } from '@/components/ChatInput/FloatingOverlay'
 import { Autocomplete } from '@/components/ChatInput/Autocomplete'
 import { StatusBar } from '@/components/AssistantChat/StatusBar'
@@ -469,6 +473,7 @@ export function HappyComposer(props: {
         lineThreshold: textContextLineThreshold,
     } = useTextContextPreferences()
     const { composerEnterBehavior } = useComposerEnterBehavior()
+    const { composerEscapeBehavior } = useComposerEscapeBehavior()
     const composerText = useAuiState((s) => s.composer.text)
     const attachments = useAuiState((s) => s.composer.attachments)
     const localAttachmentOrderRef = useRef<string[]>([])
@@ -979,6 +984,15 @@ export function HappyComposer(props: {
     }, [api, suggestions, inputState, autocompletePrefixes, haptic, richMentionsEnabled, handleUserEdit])
 
     const abortDisabled = controlsDisabled || isAborting || !threadIsRunning
+    const {
+        pending: escapeAbortPending,
+        confirmEscape,
+        reset: resetEscapeAbort,
+    } = useComposerEscapeAbort({
+        sessionId,
+        enabled: active && !abortDisabled,
+        behavior: composerEscapeBehavior,
+    })
     const switchDisabled = controlsDisabled || isSwitching || !controlledByUser
     const showSwitchButton = Boolean(controlledByUser && onSwitchToRemote)
     const showTerminalButton = Boolean(onTerminal || terminalUnsupported)
@@ -999,10 +1013,11 @@ export function HappyComposer(props: {
 
     const handleAbort = useCallback(() => {
         if (abortDisabled) return
+        resetEscapeAbort()
         haptic('error')
         setIsAborting(true)
         api.thread().cancelRun()
-    }, [abortDisabled, api, haptic])
+    }, [abortDisabled, api, haptic, resetEscapeAbort])
 
     const handleSwitch = useCallback(async () => {
         if (switchDisabled || !onSwitchToRemote) return
@@ -1319,6 +1334,7 @@ export function HappyComposer(props: {
             // FUE callout also listens on window; dismiss it first so Escape
             // does not also abort a running thread or collapse the editor.
             if (richComposerFueStatus === 'engaging') {
+                resetEscapeAbort()
                 e.preventDefault()
                 e.stopPropagation()
                 dismissRichComposerFue()
@@ -1331,9 +1347,13 @@ export function HappyComposer(props: {
             })
             if (action) {
                 e.preventDefault()
-                if (action === 'clearSuggestions') clearSuggestions()
-                else if (action === 'abort') handleAbort()
-                else handleExpandedToggle()
+                if (action === 'abort') {
+                    if (confirmEscape(e.repeat)) handleAbort()
+                } else {
+                    resetEscapeAbort()
+                    if (action === 'clearSuggestions') clearSuggestions()
+                    else handleExpandedToggle()
+                }
                 return
             }
         }
@@ -1355,6 +1375,8 @@ export function HappyComposer(props: {
         handleSuggestionSelect,
         threadIsRunning,
         handleAbort,
+        confirmEscape,
+        resetEscapeAbort,
         onPermissionModeChange,
         permissionMode,
         permissionModes,
@@ -2213,6 +2235,16 @@ export function HappyComposer(props: {
 
     return (
         <ComposerParkingContext.Provider value={isParkingScratchlist}>
+        {escapeAbortPending ? createPortal(
+            <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+6rem)] z-50 flex justify-center px-3">
+                <Toast
+                    title={t('chat.escapeAbort.title')}
+                    body={t('chat.escapeAbort.body')}
+                    className="pointer-events-none"
+                />
+            </div>,
+            document.body,
+        ) : null}
         <div className={shellClassName} data-testid="composer-shell" data-expanded={isExpanded || undefined}>
             <div className={innerClassName}>
                 <ComposerPrimitive.Root className={rootClassName} onSubmit={handleSubmit}>
@@ -2295,7 +2327,7 @@ export function HappyComposer(props: {
                             </div>
                         ) : null}
 
-                        <div className={`flex px-4 py-3 ${
+                        <div onBlurCapture={resetEscapeAbort} className={`flex px-4 py-3 ${
                             isExpanded ? 'min-h-0 flex-1 items-stretch' : 'items-center'
                         }`}>
                             {richMentionsEnabled ? (

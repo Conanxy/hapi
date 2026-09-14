@@ -1,5 +1,6 @@
 import { useTranslation } from '@/lib/use-translation'
 import { getComposerEnterBehaviorOptions, useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
+import { useComposerEscapeBehavior } from '@/hooks/useComposerEscapeBehavior'
 import { getTerminalToolDisplayModeOptions, useTerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
 import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
 import { useReasoningCollapse } from '@/hooks/useReasoningCollapse'
@@ -50,6 +51,7 @@ function ChatSurfaceColorControl(props: {
 export default function SettingsChatPage() {
     const { t } = useTranslation()
     const { composerEnterBehavior, setComposerEnterBehavior } = useComposerEnterBehavior()
+    const { composerEscapeBehavior, setComposerEscapeBehavior } = useComposerEscapeBehavior()
     const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
     const { codexExplorationCollapsed, setCodexExplorationCollapsed } = useCodexExplorationCollapse()
     const { reasoningCollapsed, setReasoningCollapsed } = useReasoningCollapse()
@@ -62,6 +64,15 @@ export default function SettingsChatPage() {
                     value={composerEnterBehavior}
                     options={getComposerEnterBehaviorOptions().map((option) => ({ value: option.value, label: t(option.labelKey) }))}
                     onChange={setComposerEnterBehavior}
+                />
+                <SettingsChoiceGroup
+                    label={t('settings.chat.escapeBehavior')}
+                    value={composerEscapeBehavior}
+                    options={[
+                        { value: 'double', label: t('settings.chat.escapeBehavior.double') },
+                        { value: 'single', label: t('settings.chat.escapeBehavior.single') },
+                    ]}
+                    onChange={setComposerEscapeBehavior}
                 />
                 <ComposerToolbarLayoutControl />
                 <TextContextThresholdSettings />

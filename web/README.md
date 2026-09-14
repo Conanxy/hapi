@@ -68,6 +68,11 @@ See `src/router.tsx` for route definitions.
 - Permission mode toggle (default/acceptEdits/auto/bypassPermissions/plan).
 - Model selection (default/sonnet/sonnet[1m]/opus/opus[1m]).
 - Session abort and mode switch controls.
+- Esc in the focused composer requires two separate presses within 2 seconds
+  to interrupt a running task by default; the first press shows a toast.
+  Chat settings can restore single-press interruption. Key repeats are ignored,
+  and confirmation resets on input/window blur, session changes, or task end.
+  Suggestion dismissal, editor collapse, and the stop button are unchanged.
 - Context size display.
 - Per-session scratchlist (`src/components/AssistantChat/ScratchlistPanel.tsx`)
   - Workbench panel for held notes/drafts; **distinct from the queue**.

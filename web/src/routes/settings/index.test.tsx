@@ -320,6 +320,16 @@ describe('responsive settings pages', () => {
         expect(screen.getByText('Grouped Tool Use Background')).toBeInTheDocument()
     })
 
+    it('defaults to double Esc and persists the single-press option', () => {
+        renderPage(<SettingsChatPage />)
+        expect(screen.getByRole('radio', { name: 'Press twice (default)' })).toBeChecked()
+        fireEvent.click(screen.getByRole('radio', { name: 'Press once' }))
+        expect(localStorage.getItem('hapi-composer-escape-behavior')).toBe('single')
+        expect(screen.getByRole('radio', { name: 'Press once' })).toBeChecked()
+        fireEvent.click(screen.getByRole('radio', { name: 'Press twice (default)' }))
+        expect(localStorage.getItem('hapi-composer-escape-behavior')).toBeNull()
+    })
+
     it('renders the default-collapse switch for Codex exploration groups', () => {
         renderPage(<SettingsChatPage />)
         const toggle = screen.getByRole('checkbox', { name: 'Collapse explored tool groups by default' })
