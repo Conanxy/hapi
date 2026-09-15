@@ -110,14 +110,14 @@ async function waitForPlatformPackages(platforms: string[], expectedVersion: str
 }
 
 async function runWithTimeoutRetry(cmd: string, cwd = projectRoot): Promise<void> {
-    const timeoutCmd = `timeout 60s ${cmd}`;
     while (true) {
-        console.log(`\n$ ${timeoutCmd}`);
+        console.log(`\n$ ${cmd}`);
         if (dryRun) {
             return;
         }
         try {
-            execSync(timeoutCmd, { cwd, stdio: 'inherit' });
+            // Use the Node child-process timeout so releases work on macOS without GNU coreutils.
+            execSync(cmd, { cwd, stdio: 'inherit', timeout: 60_000 });
             return;
         } catch {
             console.warn(`⚠️ ${cmd} failed or timed out. Retrying in 60s...`);
