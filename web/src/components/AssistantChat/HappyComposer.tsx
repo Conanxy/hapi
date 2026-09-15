@@ -16,6 +16,7 @@ import {
     type SyntheticEvent as ReactSyntheticEvent,
     useCallback,
     useEffect,
+    useImperativeHandle,
     useMemo,
     useRef,
     useState
@@ -292,6 +293,7 @@ export function ModelEffortSettingsSection(props: {
 
 export function HappyComposer(props: {
     sessionId?: string
+    focusInputRef?: MutableRefObject<(() => void) | null>
     onUploadDraftSnapshot?: (text: string, attachments: AttachmentDraftInput[]) => void
     canRestoreAttachments?: boolean
     disabled?: boolean
@@ -312,6 +314,7 @@ export function HappyComposer(props: {
     /** Model for the context-window heuristic; see StatusBar.contextModel. */
     contextModel?: string | null
     controlledByUser?: boolean
+    concurrentClients?: boolean
     agentFlavor?: string | null
     availableModelOptions?: Array<{ value: string | null; label: string }>
     /** Full Pi model data with thinkingLevelMap for provider grouping + thinking level filtering */
@@ -418,6 +421,7 @@ export function HappyComposer(props: {
         contextWindow,
         contextModel,
         controlledByUser = false,
+        concurrentClients = false,
         agentFlavor,
         availableModelOptions,
         piModels,
@@ -922,6 +926,12 @@ export function HappyComposer(props: {
         }, 0)
     }, [haptic, richMentionsEnabled])
 
+    // Keep focus within the user's click gesture so mobile keyboards can open.
+    useImperativeHandle(props.focusInputRef, () => () => {
+        if (richMentionsEnabled) richInputRef.current?.focus()
+        else textareaRef.current?.focus()
+    }, [richMentionsEnabled])
+
     const handleSuggestionSelect = useCallback((index: number) => {
         const suggestion = suggestions[index]
         if (!suggestion) return
@@ -1031,8 +1041,8 @@ export function HappyComposer(props: {
     }, [switchDisabled, onSwitchToRemote, haptic])
 
     const permissionModeOptions = useMemo(
-        () => getPermissionModeOptionsForFlavor(agentFlavor),
-        [agentFlavor]
+        () => getPermissionModeOptionsForFlavor(agentFlavor).filter(option => !concurrentClients || option.mode !== 'safe-yolo'),
+        [agentFlavor, concurrentClients]
     )
     const collaborationModeOptions = useMemo(
         () => agentFlavor === 'codex' ? getCodexCollaborationModeOptions() : [],

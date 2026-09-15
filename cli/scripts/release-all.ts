@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Unified release script that handles the complete release flow:
- * 1. Bump version
+ * 1. Bump CLI, shared, iOS, and Android versions
  * 2. Build binaries (with embedded web assets)
  * 3. Publish platform packages first (the wrapper pins them exactly)
  * 4. Verify all platform packages are live on npm
@@ -10,13 +10,13 @@
  */
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { updateReleaseVersions } from './release-version';
 
 const scriptDir = import.meta.dir;
 const projectRoot = join(scriptDir, '..');
 const repoRoot = join(projectRoot, '..');
-const buildInfoPath = join(repoRoot, 'shared', 'src', 'buildInfo.ts');
 const NPM_SCOPE = '@youngfine';
 const MAIN_PACKAGE = `${NPM_SCOPE}/hapi`;
 const NPM_DIST_TAG = 'latest';
@@ -78,21 +78,6 @@ function publishPackage(name: string, cwd: string, provenanceFlag: string): void
     );
 }
 
-function updateBuildInfoVersion(nextVersion: string): void {
-    const content = readFileSync(buildInfoPath, 'utf-8');
-    if (!/export const APP_VERSION = ['"][^'"]+['"]/.test(content)) {
-        throw new Error(`Could not find APP_VERSION in ${buildInfoPath}`);
-    }
-    const updated = content.replace(
-        /export const APP_VERSION = ['"][^'"]+['"]/,
-        `export const APP_VERSION = '${nextVersion}'`
-    );
-
-    if (!dryRun && updated !== content) {
-        writeFileSync(buildInfoPath, updated);
-    }
-}
-
 async function waitForPlatformPackages(platforms: string[], expectedVersion: string): Promise<void> {
     const timeoutMs = 10 * 60 * 1000;
     const intervalMs = 15_000;
@@ -124,7 +109,24 @@ async function waitForPlatformPackages(platforms: string[], expectedVersion: str
     }
 }
 
-async function main(): Promise<void> {
+async function runWithTimeoutRetry(cmd: string, cwd = projectRoot): Promise<void> {
+    const timeoutCmd = `timeout 60s ${cmd}`;
+    while (true) {
+        console.log(`\n$ ${timeoutCmd}`);
+        if (dryRun) {
+            return;
+        }
+        try {
+            execSync(timeoutCmd, { cwd, stdio: 'inherit' });
+            return;
+        } catch {
+            console.warn(`⚠️ ${cmd} failed or timed out. Retrying in 60s...`);
+            await new Promise(resolve => setTimeout(resolve, 60_000));
+        }
+    }
+}
+
+async function main(version: string): Promise<void> {
     const flags = [dryRun && 'dry-run', publishNpm && 'publish-npm', skipBuild && 'skip-build'].filter(Boolean);
     console.log(`\n🚀 Starting release v${version}${flags.length ? ` (${flags.join(', ')})` : ''}\n`);
 
@@ -159,8 +161,8 @@ async function main(): Promise<void> {
         console.log('   ✓ Skipping npm login check (dry-run)');
     }
 
-    // Step 1: Update package.json version
-    console.log('📦 Step 1: Updating package.json version...');
+    // Step 1: Update CLI, shared, iOS, and Android versions.
+    console.log('📦 Step 1: Updating CLI, shared, iOS, and Android versions...');
     const pkgPath = join(projectRoot, 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
     if (pkg.name !== MAIN_PACKAGE) {
@@ -171,12 +173,7 @@ async function main(): Promise<void> {
             `${publishNpm ? '--publish-npm' : '--dry-run'} requires ${projectRoot}/package.json to already contain version ${version}`
         );
     }
-    const oldVersion = pkg.version;
-    pkg.version = version;
-    if (!dryRun) {
-        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-    }
-    updateBuildInfoVersion(version);
+    const oldVersion = updateReleaseVersions(repoRoot, version, dryRun);
     console.log(`   ${oldVersion} → ${version}`);
 
     // Step 2: Build all platform binaries (with embedded web assets)
@@ -223,8 +220,12 @@ async function main(): Promise<void> {
         return;
     }
 
-    // Step 6: Git commit + tag + push
-    console.log('\n📝 Step 6: Creating git commit and tag...');
+    // Step 6: Update the lockfile for every supported platform before committing.
+    console.log('\n📥 Step 6: Updating lockfile for all platform packages...');
+    await runWithTimeoutRetry('bun install --lockfile-only --os=* --cpu=*', repoRoot);
+
+    // Step 7: Git commit + tag + push
+    console.log('\n📝 Step 7: Creating git commit and tag...');
     run(`git add .`, repoRoot);
     run(`git commit -m "Release version ${version}"`, repoRoot);
     run(`git tag v${version}`, repoRoot);
@@ -233,7 +234,7 @@ async function main(): Promise<void> {
     console.log(`\n✅ Release v${version} completed!`);
 }
 
-main().catch(err => {
+main(version).catch(err => {
     console.error('Release failed:', err);
     process.exit(1);
 });
