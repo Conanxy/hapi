@@ -45,7 +45,12 @@ describe('shared launch configuration', () => {
     it('does not interpret flags after -- as configuration', () => {
         expect(sharedLaunchConfig({ codexArgs: ['--', '--profile=explain'] }, '/tmp').tuiArgs).toEqual(['--', '--profile=explain']);
         expect(sharedLaunchConfig({ codexArgs: ['--', '-C', 'literal'] }, '/tmp').tuiArgs).toEqual(['--', '-C', 'literal']);
-        expect(() => sharedLaunchConfig({ permissionMode: 'safe-yolo' }, '/tmp')).toThrow('not a native shared');
+    });
+    it('maps archived Safe Yolo to default instead of aborting shared resume', () => {
+        const remapped = sharedLaunchConfig({ permissionMode: 'safe-yolo' }, '/tmp');
+        const native = sharedLaunchConfig({ permissionMode: 'default' }, '/tmp');
+        expect(remapped.threadParams).toEqual(native.threadParams);
+        expect(remapped.serverArgs).toEqual(native.serverArgs);
     });
     it('preserves launch-time provider and automatic-review policy', () => {
         const result = sharedLaunchConfig({ codexArgs: ['--oss', '--local-provider', 'ollama', '--approve-for-me'] }, '/tmp');

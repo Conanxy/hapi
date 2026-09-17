@@ -13,7 +13,7 @@
     },
     "cli": {
       "name": "@youngfine/hapi",
-      "version": "0.30.7-youngfine.2",
+      "version": "0.30.7-youngfine.3",
       "bin": {
         "hapi": "bin/hapi.cjs",
       },

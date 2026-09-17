@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { z } from 'zod';
 import { resolveCodexCommand, type CodexCommand } from '../utils/codexExecutable';
 import { parseCodexCliOverrides, stripCodexCliOverrides } from '../utils/codexCliOverrides';
-import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
+import { resolveCodexPermissionModeConfig, toSharedCodexPermissionMode } from '../utils/permissionModeConfig';
 import { getCodexSystemPrompt } from '../utils/systemPrompt';
 import type { CodexAppServerClient } from '../codexAppServerClient';
 
@@ -33,7 +33,7 @@ export function resolveSharedCodex(): CodexCommand {
 export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
     cwd: string; serverArgs: string[]; tuiArgs: string[]; threadParams: Record<string, unknown>;
 } {
-    if (options.permissionMode === 'safe-yolo') throw new Error('safe-yolo is not a native shared permission mode. Choose default, read-only, yolo, or native --approve-for-me.');
+    const permissionMode = toSharedCodexPermissionMode(options.permissionMode);
     const args = options.codexArgs ?? [];
     const serverArgs: string[] = [];
     let tuiArgs: string[] = [];
@@ -109,7 +109,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
     }
     if (extraDirs.length) config['sandbox_workspace_write.writable_roots'] = extraDirs.map(path => resolve(directory, path));
     if (provider) config.model_provider = provider;
-    const permission = options.permissionMode ? resolveCodexPermissionModeConfig(options.permissionMode) : undefined;
+    const permission = permissionMode ? resolveCodexPermissionModeConfig(permissionMode) : undefined;
     if (permission) {
         // Explicit HAPI permission selection wins on every launch surface:
         // initial thread, attached TUI, and later native /new threads.

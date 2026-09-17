@@ -7,6 +7,22 @@ export type CodexPermissionModeConfig = {
     sandboxPolicy: SandboxPolicy;
 };
 
+export type SharedCodexPermissionMode = Exclude<CodexPermissionMode, 'safe-yolo'>;
+
+/**
+ * Native shared Codex (app-server 0.154+) has no HAPI Safe Yolo.
+ * Archived sessions may still store `safe-yolo`; map it to `default`, which
+ * uses the same native approval/sandbox policy.
+ */
+export function toSharedCodexPermissionMode(
+    mode: CodexPermissionMode | undefined
+): SharedCodexPermissionMode | undefined {
+    if (!mode) {
+        return undefined;
+    }
+    return mode === 'safe-yolo' ? 'default' : mode;
+}
+
 export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): CodexPermissionModeConfig {
     switch (mode) {
         case 'default':

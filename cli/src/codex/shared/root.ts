@@ -12,7 +12,7 @@ import { ImplementCodexPlanRequestSchema, type ImplementCodexPlanResult } from '
 import { CodexAppServerClient, isIndeterminateError } from '../codexAppServerClient';
 import { buildHapiMcpBridge, type HapiMcpBridge } from '../utils/buildHapiMcpBridge';
 import { buildUserInputFromMessage } from '../utils/appServerConfig';
-import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
+import { resolveCodexPermissionModeConfig, toSharedCodexPermissionMode } from '../utils/permissionModeConfig';
 import { resolveCodexSlashCommand } from '../utils/slashCommands';
 import { parseReasoningEffortValue } from '../utils/reasoningEffort';
 import { SharedCodexPermissions } from './permissions';
@@ -366,7 +366,9 @@ export class SharedCodexRoot {
     }
     async applySettings(raw: unknown): Promise<{ applied: RuntimeSettings }> {
         const config = SettingsSchema.parse(raw);
-        if (config.permissionMode === 'safe-yolo') throw new Error('safe-yolo is not a native shared permission mode; choose default, read-only, or yolo');
+        if (config.permissionMode) {
+            config.permissionMode = toSharedCodexPermissionMode(config.permissionMode);
+        }
         if (Object.keys(config).length === 0) return { applied: this.settings };
         if (typeof config.modelReasoningEffort === 'string') config.modelReasoningEffort = parseReasoningEffortValue(config.modelReasoningEffort);
         if (config.modelReasoningEffort === null) {
