@@ -15,7 +15,9 @@ permissions:
 jobs:
     publish:
         if: github.ref_name == 'main'
-        runs-on: ubuntu-latest
+        # Darwin binaries must be ad-hoc signed with Apple's codesign before
+        # publish. Bun 1.4.0 compile signatures are rejected on macOS 27.
+        runs-on: macos-latest
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
