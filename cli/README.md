@@ -273,6 +273,23 @@ For an all-in-one binary that also embeds the web app:
 bun run build:single-exe
 ```
 
+### Build privacy
+
+Executable builds resolve `__dirname` and `__filename` through Bun's virtual
+filesystem instead of embedding the build machine's source directories. Build-time
+environment-variable inlining and automatic runtime `.env` loading are disabled.
+Development-mode module paths and runtime configuration remain unchanged.
+
+After compilation, the build checks the executable for the current workspace and
+home directory, including real paths, Windows/JSON-escaped paths, URL encoding,
+and UTF-16 strings. A matching artifact is rejected and removed. npm package
+preparation repeats this check before copying a binary, including when releases
+use `--skip-build`. This is a build-path check, not a comprehensive secrets audit.
+
+Already-published packages are not changed by this fix. Rebuild before publishing
+a new version; do not reuse older artifacts. Build logs can still contain local
+paths and should not be uploaded without review.
+
 ## Source structure
 
 - `src/api/` - Hub communication (Socket.IO + REST).

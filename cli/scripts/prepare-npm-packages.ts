@@ -15,6 +15,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from 'n
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDarwinPlatformPackage, signDarwinNpmBinary } from './signDarwinNpmBinary';
+import { assertNoBuildPaths } from './build-executable';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = join(__dirname, '..');
@@ -131,7 +132,7 @@ function generateMainPackageJson(
         bugs: mainPkg.bugs,
         repository: mainPkg.repository,
         bin: mainPkg.bin ?? { hapi: 'bin/hapi.cjs' },
-        files: ['bin/hapi.cjs', 'NOTICE', 'README.md'],
+        files: ['bin/hapi.cjs', 'NOTICE', 'README.md', 'README.zh-CN.md'],
         optionalDependencies,
         publishConfig: {
             access: 'public'
@@ -159,9 +160,9 @@ function prepareMainPackage(
     const destNotice = join(mainDir, 'NOTICE');
     copyFileSync(srcNotice, destNotice);
 
-    const srcReadme = join(repoRoot, 'README.md');
-    const destReadme = join(mainDir, 'README.md');
-    copyFileSync(srcReadme, destReadme);
+    for (const filename of ['README.md', 'README.zh-CN.md']) {
+        copyFileSync(join(repoRoot, filename), join(mainDir, filename));
+    }
 
     const pkgJson = generateMainPackageJson(mainPkg, optionalDependencies);
     const pkgJsonPath = join(mainDir, 'package.json');
@@ -169,7 +170,7 @@ function prepareMainPackage(
     console.log(`Generated: ${pkgJsonPath}`);
 }
 
-async function preparePlatform(
+export async function preparePlatform(
     platform: typeof PLATFORMS[number],
     mainPkg: MainPackageJson,
     distExeDir: string,
@@ -177,6 +178,14 @@ async function preparePlatform(
 ): Promise<void> {
     const platformDir = join(npmDir, platform.name);
     const binDir = join(platformDir, 'bin');
+    const srcBin = join(distExeDir, platform.buildTarget, platform.binName);
+    const destBin = join(binDir, platform.binName);
+
+    if (!existsSync(srcBin)) {
+        throw new Error(`Binary not found: ${srcBin}. Run 'bun run build:exe:all' first.`);
+    }
+    // Re-check cached binaries so --skip-build cannot package a leaking artifact.
+    assertNoBuildPaths(srcBin, repoRoot);
 
     // Ensure bin directory exists
     mkdirSync(binDir, { recursive: true });
@@ -188,15 +197,6 @@ async function preparePlatform(
     console.log(`Generated: ${pkgJsonPath}`);
 
     // Copy binary
-    const srcBin = join(distExeDir, platform.buildTarget, platform.binName);
-    const destBin = join(binDir, platform.binName);
-
-    if (!existsSync(srcBin)) {
-        console.error(`Error: Binary not found: ${srcBin}`);
-        console.error(`  Run 'bun run build:exe:all' first to build binaries.`);
-        process.exit(1);
-    }
-
     copyFileSync(srcBin, destBin);
     if (platform.os !== 'win32') {
         chmodSync(destBin, 0o755);
@@ -246,7 +246,9 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch((error) => {
-    console.error('Fatal error:', error);
-    process.exit(1);
-});
+if (import.meta.main) {
+    main().catch((error) => {
+        console.error('Fatal error:', error);
+        process.exit(1);
+    });
+}

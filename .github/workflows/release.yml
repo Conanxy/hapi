@@ -10,7 +10,8 @@ permissions:
 
 jobs:
     release:
-        runs-on: ubuntu-latest
+        # Package on macOS so the shared npm preparation step can sign Darwin binaries.
+        runs-on: macos-latest
         steps:
             - uses: actions/checkout@v4
             - uses: oven-sh/setup-bun@v2
@@ -23,26 +24,24 @@ jobs:
                   PACKAGE_VERSION="$(node -p "require('./cli/package.json').version")"
                   test "$VERSION" = "$PACKAGE_VERSION"
             - run: bun run build:single-exe:all
+            - run: bun run --cwd cli prepare-npm-packages
             - name: Package release artifacts
               run: |
-                  cd cli/dist-exe
-                  mkdir -p ../release-artifacts
-
-                  for dir in bun-*/; do
-                      target="${dir%/}"
-                      # bun-darwin-arm64 -> hapi-darwin-arm64
-                      name="hapi-${target#bun-}"
-                      name="${name/windows/win32}"
-
-                      if [[ "$target" == *"windows"* ]]; then
-                          zip -j "../release-artifacts/${name}.zip" "$target"/hapi.exe
+                  mkdir -p cli/release-artifacts
+                  for platform in darwin-arm64 darwin-x64 linux-arm64 linux-x64 win32-x64; do
+                      name="hapi-${platform}"
+                      if [[ "$platform" == "linux-x64" ]]; then
+                          name="${name}-baseline"
+                      fi
+                      if [[ "$platform" == "win32-x64" ]]; then
+                          zip -j "cli/release-artifacts/${name}.zip" "cli/npm/${platform}/bin/hapi.exe"
                       else
-                          tar -czvf "../release-artifacts/${name}.tar.gz" -C "$target" hapi
+                          tar -czvf "cli/release-artifacts/${name}.tar.gz" -C "cli/npm/${platform}/bin" hapi
                       fi
                   done
 
-                  cd ../release-artifacts
-                  sha256sum * > checksums.txt
+                  cd cli/release-artifacts
+                  shasum -a 256 *.tar.gz *.zip > checksums.txt
             - name: Create Release
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

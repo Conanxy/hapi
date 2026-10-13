@@ -1,5 +1,6 @@
 import { dirname, isAbsolute, join } from 'node:path';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const DEFAULT_TARGETS = [
@@ -204,24 +205,57 @@ function ensureEmbeddedAssetsManifest(workspaceRoot: string, includeWebAssets: b
     writeStubEmbeddedAssets(workspaceRoot);
 }
 
+export function executableBuildArguments(projectRoot: string, target: string, outfile: string): string[] {
+    const { platform, arch } = parseTarget(target);
+    const featureFlag = getFeatureFlag(platform, arch);
+    return [
+        'build',
+        '--compile',
+        '--no-compile-autoload-dotenv',
+        '--env=disable',
+        // Resolve module locations in the executable's virtual filesystem.
+        '--define=__dirname=import.meta.dirname',
+        '--define=__filename=import.meta.filename',
+        `--feature=${featureFlag}`,
+        `--target=${target}`,
+        `--outfile=${outfile}`,
+        join(projectRoot, 'src', 'bootstrap.ts')
+    ];
+}
+
+export function assertNoBuildPaths(outfile: string, workspaceRoot: string, homeDirectory = homedir()): void {
+    const paths = [workspaceRoot, homeDirectory].filter(path => path.length > 1);
+    const resolvedPaths = paths.flatMap(path => existsSync(path) ? [path, realpathSync(path)] : [path]);
+    const variants = new Set(resolvedPaths.flatMap(path => {
+        const posix = path.replaceAll('\\', '/');
+        return [path, posix, JSON.stringify(path).slice(1, -1), encodeURI(posix)];
+    }));
+    const binary = readFileSync(outfile);
+    for (const path of variants) {
+        for (const encoding of ['utf8', 'utf16le'] as const) {
+            const needle = Buffer.from(path, encoding);
+            const width = encoding === 'utf16le' ? 2 : 1;
+            let index = binary.indexOf(needle);
+            while (index !== -1) {
+                const prefix = binary.subarray(Math.max(0, index - 7 * width), index).toString(encoding);
+                // Match absolute paths, not /root inside Bun's /$bunfs/root.
+                if (!/[A-Za-z0-9_./\\~%-]$/.test(prefix) || prefix.endsWith('file://')) {
+                    throw new Error('Executable contains a build-machine workspace or home directory; refusing to release it.');
+                }
+                index = binary.indexOf(needle, index + needle.length);
+            }
+        }
+    }
+}
+
 async function buildTarget(projectRoot: string, target: string, outdir: string, name: string): Promise<void> {
     const { platform, arch } = parseTarget(target);
     assertArchivesExist(projectRoot, platform, arch);
     const outputName = platform === 'win32' ? `${name}.exe` : name;
     const outfile = join(outdir, target, outputName);
     mkdirSync(dirname(outfile), { recursive: true });
-    const featureFlag = getFeatureFlag(platform, arch);
 
-    const cmd = [
-        process.execPath,
-        'build',
-        '--compile',
-        '--no-compile-autoload-dotenv',
-        `--feature=${featureFlag}`,
-        `--target=${target}`,
-        `--outfile=${outfile}`,
-        join(projectRoot, 'src', 'bootstrap.ts')
-    ];
+    const cmd = [process.execPath, ...executableBuildArguments(projectRoot, target, outfile)];
 
     console.log(`[build:exe] ${cmd.join(' ')}`);
 
@@ -237,6 +271,13 @@ async function buildTarget(projectRoot: string, target: string, outdir: string, 
     if (exitCode !== 0) {
         throw new Error(`Build failed for target ${target} (exit ${exitCode})`);
     }
+    try {
+        assertNoBuildPaths(outfile, dirname(projectRoot));
+    } catch (error) {
+        rmSync(outfile, { force: true });
+        throw error;
+    }
+    console.log(`[build:exe] Build-path privacy check passed (${target}).`);
 }
 
 async function main(): Promise<void> {
@@ -271,7 +312,9 @@ async function main(): Promise<void> {
     }
 }
 
-main().catch((error) => {
-    console.error(`[build:exe] ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(1);
-});
+if (import.meta.main) {
+    main().catch((error) => {
+        console.error(`[build:exe] ${error instanceof Error ? error.message : String(error)}`);
+        process.exit(1);
+    });
+}
