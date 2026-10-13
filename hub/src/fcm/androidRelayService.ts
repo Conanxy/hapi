@@ -1,7 +1,7 @@
 import type { Store } from '../store'
 import { canonicalJson, encryptEnvelope, PUSH_KEY_LENGTH, PUSH_NONCE_LENGTH, PUSH_TAG_LENGTH } from '../push-native/envelope'
 import type { EncryptedPushTransport } from '../push-native/transport'
-import type { AndroidPushSender, FcmSendPayload, FcmSendResult } from './fcmService'
+import type { NativePushSender, NativePushPayload, NativePushResult, NativePushTarget } from '../push-native/types'
 
 /** Keep in sync with the standalone relay's MAX_ENVELOPE_BYTES. */
 export const MAX_ANDROID_RELAY_ENVELOPE_BYTES = 3200
@@ -12,7 +12,7 @@ function fitsEnvelope(plaintext: string): boolean {
 }
 
 /** Never cut ciphertext or action identifiers to fit a push provider's budget. */
-export function androidRelayPlaintext(data: FcmSendPayload['data']): string | null {
+export function androidRelayPlaintext(data: NativePushPayload['data']): string | null {
     const full = canonicalJson(data)
     if (fitsEnvelope(full)) return full
     const { notifySummary: _summary, ...withoutSummary } = data
@@ -29,12 +29,13 @@ export function androidRelayPlaintext(data: FcmSendPayload['data']): string | nu
     return fitsEnvelope(minimal) ? minimal : null
 }
 
-export class AndroidRelayService implements AndroidPushSender {
+export class AndroidRelayService implements NativePushSender {
     constructor(private readonly transport: EncryptedPushTransport, private readonly store: Store) {}
 
-    async sendToNamespace(namespace: string, payload: FcmSendPayload): Promise<FcmSendResult> {
+    async sendToNamespace(namespace: string, payload: NativePushPayload, target?: NativePushTarget): Promise<NativePushResult> {
         const devices = this.store.fcm.getDevicesByNamespace(namespace, ['phone'])
-        const result: FcmSendResult = { sent: 0, failed: 0, invalidTokens: [] }
+            .filter(device => !target || (device.deviceId === target.deviceId && device.platform === target.platform))
+        const result: NativePushResult = { sent: 0, failed: 0, invalidTokens: [] }
         if (!devices.length) return result
         const plaintext = androidRelayPlaintext(payload.data)
         await Promise.all(devices.map(async device => {

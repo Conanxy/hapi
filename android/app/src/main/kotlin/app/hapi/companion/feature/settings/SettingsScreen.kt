@@ -42,6 +42,7 @@ import androidx.core.os.LocaleListCompat
 import app.hapi.companion.BuildConfig
 import app.hapi.companion.R
 import app.hapi.protocol.wire.SUPPORTED_PROTOCOL_VERSION
+import app.hapi.companion.push.VivoPushSettings
 
 /**
  * Settings home (B-M4e scaffold): Appearance (theme mode + Material You),
@@ -115,6 +116,8 @@ fun SettingsScreen(
                     onClick = { showLanguageDialog = true },
                 )
             }
+
+            VivoPushSettings()
 
             if (isOwner) {
                 SettingsSection(title = stringResource(R.string.settings_section_insights)) {

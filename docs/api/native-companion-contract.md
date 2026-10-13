@@ -1,6 +1,6 @@
 # Native companion API contract (phone + Wear + iOS)
 
-**Audience:** Implementers of native companion apps (Android phone + Wear OS via FCM, iOS via APNs) that pair with a hapi hub.
+**Audience:** Implementers of native companion apps (Android phone via FCM or vivo test push, Wear OS via FCM, iOS via APNs) that pair with a hapi hub.
 
 **Auth:** Exchange the pairing `code` / CLI access token with `POST /api/auth`:
 `{ "accessToken": "<code>" }`. Use the returned JWT as `Authorization: Bearer <token>`
@@ -33,19 +33,23 @@ support for `wear` registrations; the repository does not include a Wear OS app.
 }
 ```
 
-`platform`: `"phone"` | `"wear"` | `"ios"`.
+`platform`: `"phone"` | `"wear"` | `"ios"` | `"vivo"`. Tokens are opaque
+provider tokens; `vivo` supplies the SDK's `regId`, not an FCM token.
 
-`pushKey`: required for iOS and for Android relay delivery. New Android phone
+`pushKey`: required for iOS, vivo and Android relay delivery. New Android phone
 clients always provide it. Phone registrations without it remain valid for
 direct FCM; supplied phone keys must decode to exactly 32 bytes. Wear ignores
 this field. The hub canonicalizes and stores phone/iOS keys in the existing
-registry; no schema or database version change is required.
+registry (including vivo); no schema or database version change is required.
 
 `deviceId`: any string of 1-128 characters chosen by the client (does not have to be a UUID). Must be stable across re-registrations of the same install.
 
 **Response:** `{ "ok": true }`
 
 Upsert on `(namespace, deviceId, platform)` - same device re-registering replaces its push token.
+Android phone providers (`phone`, `vivo`) are mutually exclusive for the same
+`(namespace, deviceId)`: registering one removes the other provider's binding.
+Other installs, namespaces, Wear and iOS registrations remain unchanged.
 
 ### Unregister
 
@@ -62,14 +66,14 @@ Upsert on `(namespace, deviceId, platform)` - same device re-registering replace
 ## Outbound push (hub → device)
 
 The hub dispatches native notifications independently of PWA visibility.
-Android uses direct FCM or an encrypted relay depending on hub configuration;
+Android uses direct FCM, an encrypted relay or opt-in vivo test push depending on hub/app configuration;
 iOS uses APNs or the encrypted relay. A successful send to at least one native
 device sets a per-dispatch gate that suppresses Web Push for that event and
 namespace. Missing registrations, missing relay encryption keys, and failed
 sends do not suppress the fallback. Provider acceptance is not a handset
 receipt.
 
-### Data payload (all platforms)
+### Common notification data
 
 | Key | Example | Purpose |
 |-----|---------|---------|
@@ -86,6 +90,8 @@ receipt.
 
 Direct FCM is data-only. Android relay messages contain the encrypted wrapper
 below; after decryption the same data contract drives rendering and actions.
+vivo uses only the encrypted minimal tap subset described below, with generic
+system-rendered text rather than this full presentation/action payload.
 
 ### Questions (`input-request`)
 
@@ -175,6 +181,53 @@ errors and Firebase project mismatch retain it. The relay does not enqueue
 or retry sends. The relay and Google see tokens and delivery metadata but
 cannot read notification content; the private direct-FCM path retains its
 existing plaintext payload.
+
+---
+
+## Android vivo test push
+
+Manual tests are available in web **Settings → General → Companion → Push
+devices** through the authenticated, namespace-scoped
+[`GET /api/devices` and `POST /api/devices/test`](./client-contract/rest.md#devices-android--ios-push).
+Tests reuse the configured sender, select one device, and send fixed generic
+text with encrypted `type: "test"` and synthetic session ID
+`__hapi_push_test__`. Android test taps only open the app. The test endpoint
+reports provider acceptance, not delivery, and applies a 10-second cooldown
+including failed sends. The same endpoint supports FCM/Android relay tests;
+iOS tests are not yet supported.
+
+Registration uses `platform: "vivo"`, the SDK `regId`, the same stable install
+ID and a required Base64 32-byte `pushKey`. The Android provider registry
+selects vivo only when configured on a supported brand and explicitly enabled
+by the user; otherwise it selects available FCM. Switching unregisters the
+old channel best-effort and registers the new one with every paired hub.
+
+The hub adapter is disabled by default. Set `HAPI_VIVO_PUSH=test` and matching
+`VIVO_APP_ID`, `VIVO_APP_KEY`, `VIVO_APP_SECRET`. It authenticates directly to
+vivo and calls the single-device API with `pushMode: 1`, category `TODO`.
+Unpublished/restricted applications are limited to 1000 test messages per app
+per day, online devices only, with no offline caching. Provider acceptance
+does not prove device receipt; no production entitlement or force-stop
+delivery is guaranteed.
+
+vivo's system renderer cannot decrypt custom text, so the visible title/body
+are always generic HAPI activity text. `skipType: 4` opens the exported
+`app.hapi.companion.MainActivity` in package `run.hapi.companion` through
+`hapicompanion://push`. Its intent extras are string `hapi_v: "1"` and
+`hapi_e: "<envelope>"`. The [encrypted envelope](#encrypted-envelope) contains
+only `{sessionId, type, contractVersion}`. An intent longer than 2048 characters
+fails the send; ciphertext is never truncated. Invalid envelopes are dropped.
+Session names, chat content, paths, request IDs and summaries are not sent
+in plaintext. There are no inline reply or approval actions. Taps retain the
+existing Android active-hub-only session navigation behavior.
+
+Only explicit matching-token unsubscribe evidence prunes a registration.
+Authentication, quota, permission, project mismatch and network errors retain
+it. The adapter does not queue offline messages or automatically resend
+notifications. SDK registration retries are independent of delivery retries.
+
+See [Android configuration](../../android/README.md#vivo-test-push) and vivo's
+[test-message documentation](https://dev.vivo.com.cn/documentCenter/doc/735).
 
 ---
 
@@ -316,7 +369,7 @@ and suppresses the Web Push fallback for the namespace when a send succeeds
 | `auto` (default) | Configured `FCM_SERVICE_ACCOUNT_PATH`: direct FCM; otherwise official relay |
 | `relay` | Force the relay, ignoring private Firebase credentials |
 | `fcm` | Require private Firebase credentials, direct phone/Wear delivery |
-| `off` | Disable Android/Wear push |
+| `off` | Disable FCM/relay Android and Wear push (vivo is configured independently) |
 
 ```bash
 # Default: no Firebase configuration needed for official Android apps.
@@ -333,14 +386,16 @@ explicit credentials or an unknown Android mode disable the channel with a
 diagnostic; they never silently switch private tokens to the official
 project. One hub selects one Android transport/project; mixing builds from
 different Firebase projects is unsupported. iOS transport selection
-(`HAPI_IOS_PUSH`, `APNS_*`) is independent. The push relay does not depend on
+(`HAPI_IOS_PUSH`, `APNS_*`) and vivo (`HAPI_VIVO_PUSH`, `VIVO_APP_*`) are independent. The push relay does not depend on
 whether the hub's network tunnel (`--relay`) is enabled.
 
 Push configuration follows the hub-wide rule (env > `settings.json` >
 default; an env value is persisted into `~/.hapi/settings.json` on first
 sight, so the variable only has to be passed once). settings.json keys:
 `androidPushMode`, `fcmServiceAccountPath`, `iosPushMode`, `iosPushRelayUrl`, `apnsKeyP8Path`,
-`apnsKeyId`, `apnsTeamId`, `apnsBundleId`, `apnsEnv`. The historical
+`apnsKeyId`, `apnsTeamId`, `apnsBundleId`, `apnsEnv`,
+`vivoPushMode`, `vivoAppId`, `vivoAppKey`, `vivoAppSecret`. Credentials are
+persisted in the owner-only settings file; protect its backups as secrets. The historical
 `iosPushRelayUrl` setting supplies the shared URL for both platforms. Path
 values may use `~`.
 

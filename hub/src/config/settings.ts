@@ -27,6 +27,10 @@ export interface Settings {
     // this section; interpreted by fcmConfig.ts / iosPushConfig.ts.
     androidPushMode?: string
     fcmServiceAccountPath?: string
+    vivoPushMode?: string
+    vivoAppId?: string
+    vivoAppKey?: string
+    vivoAppSecret?: string
     iosPushMode?: string
     iosPushRelayUrl?: string
     apnsKeyP8Path?: string

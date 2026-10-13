@@ -28,6 +28,20 @@ class PushEnvelopeTest {
     }
 
     @Test
+    fun `minimal vivo tap targets decrypt without chat previews or action identifiers`() {
+        val decoder = PushMessageDecoder { key }
+        val payload = decoder.decode(mapOf(
+            "hapi_v" to "1",
+            "hapi_e" to encrypt("""{"contractVersion":"1","sessionId":"s1","type":"permission-request"}"""),
+        ))!!
+        assertEquals("s1", payload.sessionId)
+        assertTrue(payload.isKnownContractVersion)
+        assertNull(payload.title)
+        assertNull(payload.body)
+        assertNull(payload.requestId)
+    }
+
+    @Test
     fun `matches the same normative vector as hub and iOS`() {
         val file = File(System.getProperty("hapi.fixtures.dir"), "push/envelope-v1.json")
         val vector = Json.parseToJsonElement(file.readText()).jsonObject

@@ -1,6 +1,6 @@
 {
   "name": "@youngfine/hapi",
-  "version": "0.30.7-youngfine.3",
+  "version": "0.30.7-youngfine.4",
   "description": "Unofficial personal fork of HAPI with custom remote-agent workflow improvements",
   "author": "youngfine (fork maintainer); Kirill Dubovitskiy & weishu (upstream)",
   "license": "AGPL-3.0-only",

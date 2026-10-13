@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">HAPI</string>
+    <string name="vivo_push_title">Notifications</string>
+    <string name="vivo_push_enable">vivo test notifications</string>
+    <string name="vivo_push_disabled">Off</string>
+    <string name="vivo_push_registering">Registering device with vivo</string>
+    <string name="vivo_push_registered">Device registered with vivo</string>
+    <string name="vivo_push_failed">Registration failed</string>
+    <string name="vivo_push_unsupported">vivo push is unavailable on this device</string>
+    <string name="vivo_push_retry">Re-register</string>
+    <string name="vivo_push_notification_settings">Notification settings</string>
+    <string name="vivo_push_consent_title">Enable vivo notifications?</string>
+    <string name="vivo_push_consent_body">The vivo push SDK, provided by vivo Mobile Communication Co., Ltd., processes app information, a registration identifier, device type and system information to deliver notifications and measure SDK request success. Notification previews contain no chat content.</string>
+    <string name="vivo_push_privacy">vivo SDK privacy policy</string>
+    <string name="vivo_push_consent_accept">Agree and enable</string>
+    <string name="vivo_push_consent_cancel">Cancel</string>
 
     <!-- Markdown / code / diff rendering (B-M2d1) -->
     <string name="code_copy">Copy</string>

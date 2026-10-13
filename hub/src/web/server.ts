@@ -29,6 +29,7 @@ import { createCodexDesktopRoutes } from './routes/codexDesktop'
 import { createPiSessionRoutes } from './routes/piSessions'
 import { createPushRoutes } from './routes/push'
 import { createDevicesRoutes } from './routes/devices'
+import type { ResolvedPushProvider } from '../push-native/providers'
 import { createVoiceRoutes } from './routes/voice'
 import { createHubSettingsRoutes } from './routes/hubSettings'
 import { createWorkGraphRoutes } from './routes/workGraph'
@@ -224,6 +225,7 @@ function createWebApp(options: {
     jwtSecret: Uint8Array
     store: Store
     vapidPublicKey: string
+    nativePushProviders?: readonly ResolvedPushProvider[]
     corsOrigins?: string[]
     embeddedAssetMap: Map<string, EmbeddedWebAsset> | null
     relayMode?: boolean
@@ -304,7 +306,7 @@ function createWebApp(options: {
         getSyncEngine: options.getSyncEngine
     }))
     app.route('/api', createPushRoutes(options.store, options.vapidPublicKey))
-    app.route('/api', createDevicesRoutes(options.store))
+    app.route('/api', createDevicesRoutes(options.store, options.nativePushProviders))
     app.route('/api', createVoiceRoutes({ dataDir: configuration.dataDir }))
     // Path is intentionally NOT `/api/events` — that route is the SSE stream.
     app.route('/api', createWorkGraphRoutes(options.store))
@@ -419,6 +421,7 @@ export async function startWebServer(options: {
     jwtSecret: Uint8Array
     store: Store
     vapidPublicKey: string
+    nativePushProviders?: readonly ResolvedPushProvider[]
     socketEngine: SocketEngine
     corsOrigins?: string[]
     relayMode?: boolean
@@ -433,6 +436,7 @@ export async function startWebServer(options: {
         jwtSecret: options.jwtSecret,
         store: options.store,
         vapidPublicKey: options.vapidPublicKey,
+        nativePushProviders: options.nativePushProviders,
         corsOrigins: options.corsOrigins,
         embeddedAssetMap,
         relayMode: options.relayMode,

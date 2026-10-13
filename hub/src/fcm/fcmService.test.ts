@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { FcmService, type FcmSendPayload } from './fcmService'
+import { FcmService } from './fcmService'
+import type { NativePushPayload } from '../push-native/types'
 import type { ServiceAccount } from './fcmAuth'
 
 type FakeStore = {
@@ -42,7 +43,7 @@ function makeStore(devices: Array<{ token: string; platform: 'phone' | 'wear'; d
     }
 }
 
-function makePayload(overrides: Partial<FcmSendPayload['data']> = {}): FcmSendPayload {
+function makePayload(overrides: Partial<NativePushPayload['data']> = {}): NativePushPayload {
     return {
         title: 'T',
         body: 'B',
@@ -66,6 +67,22 @@ describe('FcmService.sendToNamespace', () => {
     })
     afterEach(() => {
         globalThis.fetch = originalFetch
+    })
+
+    it('targets an exact device/platform without broadcasting', async () => {
+        const store = makeStore([
+            { namespace: 'default', token: 'one', platform: 'phone', deviceId: 'one' },
+            { namespace: 'default', token: 'two', platform: 'phone', deviceId: 'two' },
+            { namespace: 'default', token: 'watch', platform: 'wear', deviceId: 'two' }
+        ])
+        const tokens: string[] = []
+        globalThis.fetch = mock(async (_url: unknown, init?: RequestInit) => {
+            tokens.push(JSON.parse(String(init?.body)).message.token)
+            return Response.json({ name: 'ok' })
+        }) as unknown as typeof fetch
+        expect(await makeService(store).sendToNamespace('default', makePayload(), { deviceId: 'two', platform: 'phone' }))
+            .toEqual({ sent: 1, failed: 0, invalidTokens: [] })
+        expect(tokens).toEqual(['two'])
     })
 
     it('removes the device row when FCM returns 404 UNREGISTERED (token rotated)', async () => {

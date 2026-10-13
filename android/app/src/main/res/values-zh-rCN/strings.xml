@@ -8,6 +8,20 @@
 -->
 <resources>
     <string name="app_name">HAPI</string>
+    <string name="vivo_push_title">通知</string>
+    <string name="vivo_push_enable">vivo 测试推送</string>
+    <string name="vivo_push_disabled">未开启</string>
+    <string name="vivo_push_registering">正在向 vivo 注册设备</string>
+    <string name="vivo_push_registered">设备已在 vivo 注册</string>
+    <string name="vivo_push_failed">注册失败</string>
+    <string name="vivo_push_unsupported">此设备不支持 vivo 推送</string>
+    <string name="vivo_push_retry">重新注册</string>
+    <string name="vivo_push_notification_settings">通知设置</string>
+    <string name="vivo_push_consent_title">启用 vivo 推送？</string>
+    <string name="vivo_push_consent_body">vivo 推送 SDK 由维沃移动通信有限公司提供，会处理应用基本信息、注册标识、设备类型和系统信息，用于推送通知并统计 SDK 请求成功率。通知预览不包含聊天内容。</string>
+    <string name="vivo_push_privacy">vivo SDK 隐私政策</string>
+    <string name="vivo_push_consent_accept">同意并启用</string>
+    <string name="vivo_push_consent_cancel">取消</string>
 
     <!-- Markdown / code / diff rendering (B-M2d1) -->
     <string name="code_copy">复制</string>

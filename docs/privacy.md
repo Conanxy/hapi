@@ -5,10 +5,10 @@ aside: false
 
 # Privacy Policy
 
-**Effective date: September 12, 2026** · Applies to the HAPI mobile companion apps (Android and iOS) and the self-hosted HAPI hub.
+**Effective date: October 12, 2026** · Applies to the HAPI mobile companion apps (Android and iOS) and the self-hosted HAPI hub.
 
 ::: tip The short version
-HAPI is self-hosted software. Your app connects to a hub **you** operate; the HAPI project does not run a central account or application backend that receives your conversations or source code. Optional features can send data to services you or the app enable — notably the HAPI push relay, Firebase Cloud Messaging, Apple Push Notification service, voice-transcription providers, and the coding-agent/model providers configured on your machine. The HAPI push relay processes device and connection metadata to deliver encrypted notifications, prevent abuse, and diagnose delivery failures. HAPI contains no advertising or tracking SDKs and no product analytics.
+HAPI is self-hosted software. Your app connects to a hub **you** operate; the HAPI project does not run a central account or application backend that receives your conversations or source code. Optional features can send data to services you or the app enable — notably the HAPI push relay, Firebase Cloud Messaging, optional vivo push, Apple Push Notification service, voice-transcription providers, and the coding-agent/model providers configured on your machine. The HAPI push relay processes device and connection metadata to deliver encrypted notifications, prevent abuse, and diagnose delivery failures. HAPI contains no advertising or tracking SDKs and no product analytics.
 :::
 
 In this policy, “we” means the maintainers and publisher of the HAPI project. The person or organization operating a hub controls the data stored on that hub and the external services configured for it.
@@ -40,7 +40,28 @@ Your hub, coding agents, plugins, and command-line tools may send prompts, sourc
 
 ## Push notifications
 
-**Android:** notifications use Google Firebase Cloud Messaging (FCM). When push is enabled, the app registers its FCM token, random app device identifier, and device-generated encryption key with each paired hub. Official app delivery through the HAPI push relay is end-to-end encrypted: the relay and Google carry ciphertext and routing metadata, but cannot read notification content. Private builds using a hub configured for direct FCM retain an unencrypted notification payload, including session identifiers, title, status, and action type; Google processes that data under [Firebase's privacy terms](https://firebase.google.com/support/privacy). Builds without Firebase configuration do not register for or receive FCM push.
+**Android FCM:** notifications use Google Firebase Cloud Messaging (FCM) unless the user selects configured vivo push. When push is enabled, the app registers its provider token, random app device identifier, and device-generated encryption key with each paired hub. Official FCM delivery through the HAPI push relay is end-to-end encrypted: the relay and Google carry ciphertext and routing metadata, but cannot read notification content. Private builds using a hub configured for direct FCM retain an unencrypted notification payload, including session identifiers, title, status, and action type; Google processes that data under [Firebase's privacy terms](https://firebase.google.com/support/privacy). Builds without Firebase configuration do not register for or receive FCM push.
+
+**Optional Android vivo push:** configured builds include the vivo push SDK
+(`vivo:vpush:4.1.7.0`), provided by **维沃移动通信有限公司**. HAPI initializes
+this SDK only after explicit consent in Settings on eligible vivo/iQOO
+devices. It provides push delivery and SDK API-success statistics. Under
+[vivo's SDK privacy policy](https://dev.vivo.com.cn/documentCenter/doc/878),
+the SDK processes application information (app ID/key, package name, app
+version and SDK version), its app-scoped registration identifier (`regId`),
+hardware device type, and system type/version. This SDK-specific operational
+processing is separate from HAPI product analytics, which HAPI does not collect.
+
+The paired hub stores the vivo registration identifier, random install ID
+and encryption key, and sends directly to vivo rather than the HAPI push
+relay. vivo receives the registration identifier, generic HAPI notice text,
+an encrypted session tap target and delivery/connection metadata. Session
+names, chat content, paths, approval IDs and summaries are not sent in
+plaintext. The system shows a generic notice; HAPI decrypts its tap target
+on opening. This implementation uses online-only test messages with no
+offline caching, not production push. Turning off vivo push attempts to
+unregister the hub bindings and disable the SDK's push subscription, then
+uses FCM when available; it does not erase provider-side records.
 
 **iOS:** notifications are end-to-end encrypted. Your hub encrypts the content with a key that exists only on your device and your hub; Apple's push service and the HAPI push relay carry ciphertext and routing metadata only, and cannot read the notification content. Self-hosters using a separately signed app build with matching APNs credentials can bypass the relay; a different developer account's credentials alone cannot send notifications to an app signed by the official publisher.
 
@@ -76,7 +97,7 @@ Unpairing a hub removes that hub's credentials from the app and attempts to unre
 
 Data stored on a hub remains under the hub operator's control and retention settings. Delete it from the hub, its underlying storage, and any configured provider as appropriate. HAPI has no central user account to delete.
 
-For native relay data, stopping delivery does not erase earlier operational logs. Hub operators can disable push with `HAPI_IOS_PUSH=off` or `HAPI_ANDROID_PUSH=off` for the corresponding platform; unpairing also attempts to remove that hub's device registration. Rate-limit entries are removed through the eviction/restart behavior described above, not by an app-side account-deletion action. External log deletion and rotation are controlled separately by the hosting operator.
+For native relay data, stopping delivery does not erase earlier operational logs. Hub operators can disable push with `HAPI_IOS_PUSH=off`, `HAPI_ANDROID_PUSH=off` (FCM/Android relay), or `HAPI_VIVO_PUSH=off` for the corresponding channel; unpairing also attempts to remove that hub's device registration. Rate-limit entries are removed through the eviction/restart behavior described above, not by an app-side account-deletion action. External log deletion and rotation are controlled separately by the hosting operator.
 
 To ask about the official relay's deployed log retention or request deletion of relay-related personal data, email [twsxtd@gmail.com](mailto:twsxtd@gmail.com). We will determine what records we can identify and the applicable deletion or retention requirements. We cannot identify a device from an email address alone and do not promise that all records can be located or that data on independently operated hubs or providers can be deleted by HAPI. Do not post device tokens, hub access credentials, or encryption keys in public issues or include them in an initial email; contact us privately to establish a safe way to handle your request.
 

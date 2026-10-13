@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 
 import type { NativeDevicePlatform, StoredFcmDevice } from './types'
+import { androidPhonePlatforms } from '../push-native/platforms'
 
 type DbFcmDeviceRow = {
     id: number
@@ -43,6 +44,16 @@ export function upsertFcmDevice(
     }
 
     db.transaction(() => {
+        // A phone install selects one Android provider. Switching to vivo
+        // (or back to FCM) must not leave a second notification destination.
+        if (androidPhonePlatforms.includes(device.platform)) {
+            const placeholders = androidPhonePlatforms.map(() => '?').join(', ')
+            db.prepare(`
+                DELETE FROM fcm_devices
+                WHERE namespace = ? AND device_id = ?
+                  AND platform IN (${placeholders}) AND platform != ?
+            `).run(namespace, device.deviceId, ...androidPhonePlatforms, device.platform)
+        }
         // One push token must not deliver across namespaces. Re-pairing the
         // same native install under a new namespace drops stale rows that
         // still reference this token elsewhere.

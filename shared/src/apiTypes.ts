@@ -938,6 +938,23 @@ export type SqliteStorageUsageResponse = {
     totalBytes: number
 }
 
+export type NativePushDevice = {
+    deviceId: string
+    platform: string
+    updatedAt: number
+    providerId: string | null
+    enabled: boolean
+    testable: boolean
+}
+
+export type NativePushDevicesResponse = { devices: NativePushDevice[] }
+export type NativePushTestRequest = Pick<NativePushDevice, 'deviceId' | 'platform'>
+export type NativePushTestResponse = {
+    status: 'accepted'
+    providerId: string
+    retryAfterSeconds: number
+}
+
 export type UsageSummaryBucket = {
     key: string
     inputTokens: number

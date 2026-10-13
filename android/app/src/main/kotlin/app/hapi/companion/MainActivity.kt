@@ -20,7 +20,6 @@ import app.hapi.companion.di.LocalAppGraph
 import app.hapi.companion.fcm.PushNotifications
 import app.hapi.companion.feature.settings.ThemeMode
 import app.hapi.companion.feature.settings.ThemeSettings
-import app.hapi.companion.push.PushBinding
 import app.hapi.companion.ui.theme.HapiTheme
 import app.hapi.protocol.pairing.BindLink
 import kotlinx.coroutines.flow.first
@@ -72,6 +71,7 @@ class MainActivity : AppCompatActivity() {
             // (or re-trigger a notification navigation).
             handleBindIntent(intent)
             handleOpenSessionIntent(intent)
+            handleEncryptedPushIntent(intent)
         }
         setContent {
             // Follow-system default renders for the first frames while the
@@ -98,11 +98,13 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         handleBindIntent(intent)
         handleOpenSessionIntent(intent)
+        handleEncryptedPushIntent(intent)
     }
 
     private fun handleBindIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_VIEW) return
         val data = intent.data ?: return
+        if (data.scheme == BindLink.SCHEME && data.host == "push") return
         val link = BindLink.parse(data.toString())
         if (link != null) {
             appGraph.pendingBindLink.value = link
@@ -119,15 +121,28 @@ class MainActivity : AppCompatActivity() {
         appGraph.pendingOpenSessionId.value = sessionId
     }
 
+    /** Reject plaintext/forged tap targets even though MainActivity is exported. */
+    private fun handleEncryptedPushIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val data = intent.data ?: return
+        if (data.scheme != BindLink.SCHEME || data.host != "push") return
+        if (!appGraph.pushCoordinator.available) return
+        val version = intent.getStringExtra("hapi_v") ?: return
+        val envelope = intent.getStringExtra("hapi_e") ?: return
+        val payload = appGraph.pushMessageDecoder.decode(mapOf("hapi_v" to version, "hapi_e" to envelope)) ?: return
+        if (!payload.isKnownContractVersion) return
+        appGraph.pendingOpenSessionId.value = payload.navigationSessionId ?: return
+    }
+
     /**
      * POST_NOTIFICATIONS (API 33+) — asked only once a hub is actually
      * paired (never on the pristine first open) and only when push can work
-     * at all ([PushBinding.isAvailable]). Waiting on the roster flow means a
+     * at all ([app.hapi.data.push.PushCoordinator.available]). Waiting on the roster flow means a
      * fresh pairing in this very session triggers the prompt right away.
      */
     private fun maybeRequestNotificationPermission() {
         if (Build.VERSION.SDK_INT < 33) return
-        if (!PushBinding.isAvailable(this)) return
+        if (!appGraph.pushCoordinator.available) return
         lifecycleScope.launch {
             appGraph.hubRegistry.state.first { it.hubs.isNotEmpty() }
             val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==

@@ -3,9 +3,9 @@ import { Store } from '../store'
 import { decryptEnvelope, encryptEnvelope } from '../push-native/envelope'
 import type { EncryptedPushRequest } from '../push-native/transport'
 import { AndroidRelayService, androidRelayPlaintext, MAX_ANDROID_RELAY_ENVELOPE_BYTES } from './androidRelayService'
-import type { FcmSendPayload } from './fcmService'
+import type { NativePushPayload } from '../push-native/types'
 
-const payload: FcmSendPayload = {
+const payload: NativePushPayload = {
     title: 'Permission Request', body: 'Run command?',
     data: { type: 'permission-request', title: 'Permission Request', body: 'Run command?', sessionId: 's1',
         sessionName: 'demo', url: '/sessions/s1', requestId: 'r1', contractVersion: '1' }
@@ -33,6 +33,10 @@ describe('Android relay fan-out', () => {
             expect(request.collapseId).toBeUndefined()
         }
         expect(store.fcm.getDevicesByNamespace('ns')).toHaveLength(5)
+        requests.length = 0
+        expect(await service.sendToNamespace('ns', payload, { deviceId: 'token-B', platform: 'phone' })).toEqual({ sent: 1, failed: 0, invalidTokens: [] })
+        expect(requests.map(request => request.token)).toEqual(['token-B'])
+        expect(await service.sendToNamespace('ns', payload, { deviceId: 'token-B', platform: 'vivo' })).toEqual({ sent: 0, failed: 0, invalidTokens: [] })
         store.close()
     })
 

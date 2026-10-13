@@ -17,6 +17,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            url = uri("https://repos.vivo.com.cn/maven/repository/external-lib/")
+            content { includeGroup("vivo") }
+        }
     }
 }
 

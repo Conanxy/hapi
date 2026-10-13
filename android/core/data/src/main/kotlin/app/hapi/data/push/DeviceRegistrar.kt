@@ -9,10 +9,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Current FCM registration token, or **null when push is unavailable** —
- * Firebase not configured (no `google-services.json`), Play services absent,
- * or the token fetch failed. A null token turns every registrar entry point
- * into a clean no-op (the `PushBinding.isAvailable` gate, threaded through).
+ * Current provider token, or null when this provider is not selected or
+ * unavailable. Acquisition failures can throw to schedule a registration retry.
  */
 fun interface PushTokenSource {
     suspend fun currentToken(): String?
@@ -37,11 +35,14 @@ interface PushDeviceGateway {
 }
 
 /** [PushDeviceGateway] over on-demand authed sessions ([PushHubAccess]). */
-class ApiPushDeviceGateway(private val hubAccess: PushHubAccess) : PushDeviceGateway {
+class ApiPushDeviceGateway(
+    private val hubAccess: PushHubAccess,
+    private val platform: String = "phone",
+) : PushDeviceGateway {
 
     override suspend fun register(hubUrl: String, token: String, identity: PushIdentity) {
         hubAccess.withApi(hubUrl) { api ->
-            api.registerDevice(token = token, deviceId = identity.deviceId, pushKey = identity.pushKey, platform = PLATFORM)
+            api.registerDevice(token = token, deviceId = identity.deviceId, pushKey = identity.pushKey, platform = platform)
         }
     }
 
@@ -49,15 +50,11 @@ class ApiPushDeviceGateway(private val hubAccess: PushHubAccess) : PushDeviceGat
         hubAccess.withApi(hubUrl) { api -> api.unregisterDevice(token) }
     }
 
-    private companion object {
-        /** This app is the phone companion (`'phone' | 'wear'` per contract). */
-        const val PLATFORM = "phone"
-    }
 }
 
 /**
  * Keeps every paired hub's device registration current
- * (`docs/api/native-companion-contract.md`): the FCM token is registered to
+ * (`docs/api/native-companion-contract.md`): the provider token is registered to
  * **all** hubs in the roster — each hub pushes independently for its own
  * namespace — and unregistered from a hub on sign-out.
  *
@@ -66,7 +63,7 @@ class ApiPushDeviceGateway(private val hubAccess: PushHubAccess) : PushDeviceGat
  *    re-registers every hub — cheap upsert, and it heals registrations lost
  *    to reinstalls or hub-side pruning. Later emissions register only newly
  *    added hubs (fresh pairings).
- *  - [onNewToken]: FCM rotated the token — re-register everywhere.
+ *  - [onNewToken]: the provider rotated the token — re-register everywhere.
  *  - [unregisterHub]: best-effort `DELETE` on sign-out, while the hub's JWT
  *    still works (the caller wipes credentials right after).
  *
@@ -100,7 +97,7 @@ class DeviceRegistrar(
         }
     }
 
-    /** FCM token rotation (`onNewToken`): push [token] to every paired hub. */
+    /** Provider token rotation: push [token] to every paired hub. */
     fun onNewToken(token: String) {
         scope.launch { registerHubs(registry.state.value.hubs, token) }
     }
@@ -133,7 +130,14 @@ class DeviceRegistrar(
     }
 
     private suspend fun registerHubs(hubs: List<String>, presetToken: String? = null) {
-        val token = presetToken ?: tokenSource.currentToken() ?: return // push unavailable
+        val token = try {
+            presetToken ?: tokenSource.currentToken() ?: return // push unavailable
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            if (isTransient(error)) hubs.forEach(retryScheduler::scheduleRetry)
+            return
+        }
         for (hubUrl in hubs) {
             try {
                 val identity = identities.identity()

@@ -1,52 +1,6 @@
 import type { Store } from '../store'
 import { getFcmAccessToken, FCM_REQUEST_TIMEOUT_MS, type ServiceAccount } from './fcmAuth'
-
-export type FcmDataPayload = {
-    type: string
-    sessionId: string
-    sessionName: string
-    url: string
-    requestId?: string
-    title: string
-    body: string
-    contractVersion: string
-    /**
-     * Visual urgency hint for the client. Drives the notification accent
-     * color on Wear OS / phone, and may be used for sound channel routing
-     * later. Independent of `type` because `task-notification` is one
-     * type that splits across success and failure outcomes.
-     *
-     *  - `info`     ready / input request                -> blue
-     *  - `success`  task completed                       -> green
-     *  - `warning`  permission request                   -> amber
-     *  - `error`    task failed / aborted                -> red
-     */
-    severity?: 'info' | 'success' | 'warning' | 'error'
-    /**
-     * JSON-stringified `AGENT_NOTIFY_SUMMARY` object when the agent emitted
-     * one as the trailing line of its last message. The companion app may
-     * use this for richer rendering or future event-bus routing; absent
-     * when the agent did not emit a summary.
-     */
-    notifySummary?: string
-}
-
-export type FcmSendPayload = {
-    title: string
-    body: string
-    tag?: string
-    data: FcmDataPayload
-}
-
-export type FcmSendResult = {
-    sent: number
-    failed: number
-    invalidTokens: string[]
-}
-
-export interface AndroidPushSender {
-    sendToNamespace(namespace: string, payload: FcmSendPayload): Promise<FcmSendResult>
-}
+import type { NativePushPayload, NativePushResult, NativePushSender, NativePushTarget } from '../push-native/types'
 
 /**
  * Outcome of a single FCM send. We split `failed` into:
@@ -58,7 +12,7 @@ export interface AndroidPushSender {
  */
 type FcmTokenSendResult = 'sent' | 'invalid' | 'failed'
 
-export class FcmService {
+export class FcmService implements NativePushSender {
     /**
      * Rolling window of the last N send outcomes. Drives `isHealthy()`,
      * which the native-fallback probe consults to decide whether suppressing
@@ -112,10 +66,11 @@ export class FcmService {
         }
     }
 
-    async sendToNamespace(namespace: string, payload: FcmSendPayload): Promise<FcmSendResult> {
+    async sendToNamespace(namespace: string, payload: NativePushPayload, target?: NativePushTarget): Promise<NativePushResult> {
         // The registry also holds iOS rows (APNs tokens + E2E push keys);
         // those go through IosPushService, never through FCM.
         const devices = this.store.fcm.getDevicesByNamespace(namespace, ['phone', 'wear'])
+            .filter(device => !target || (device.deviceId === target.deviceId && device.platform === target.platform))
         if (devices.length === 0) {
             return { sent: 0, failed: 0, invalidTokens: [] }
         }
@@ -162,7 +117,7 @@ export class FcmService {
     private async sendToToken(
         accessToken: string,
         token: string,
-        payload: FcmSendPayload,
+        payload: NativePushPayload,
         platform: 'phone' | 'wear'
     ): Promise<FcmTokenSendResult> {
         const url = `https://fcm.googleapis.com/v1/projects/${this.projectId}/messages:send`

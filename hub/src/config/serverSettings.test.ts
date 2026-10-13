@@ -60,6 +60,31 @@ describe('loadServerSettings', () => {
         }
     })
 
+    it('loads vivo test credentials using the common env/file settings rules', async () => {
+        dir = makeTempDir()
+        const env = ['HAPI_VIVO_PUSH', 'VIVO_APP_ID', 'VIVO_APP_KEY', 'VIVO_APP_SECRET'] as const
+        const originals = env.map(key => process.env[key])
+        try {
+            process.env.HAPI_VIVO_PUSH = 'test'
+            process.env.VIVO_APP_ID = '10004'
+            process.env.VIVO_APP_KEY = 'key'
+            process.env.VIVO_APP_SECRET = 'secret'
+            const configured = await loadServerSettings(dir)
+            expect(configured.settings.vivoPushMode).toBe('test')
+            expect(configured.settings.vivoAppId).toBe('10004')
+            expect(configured.sources.vivoAppSecret).toBe('env')
+            env.forEach(key => delete process.env[key])
+            const restored = await loadServerSettings(dir)
+            expect(restored.settings.vivoAppSecret).toBe('secret')
+            expect(restored.sources.vivoAppSecret).toBe('file')
+        } finally {
+            env.forEach((key, index) => {
+                if (originals[index] === undefined) delete process.env[key]
+                else process.env[key] = originals[index]
+            })
+        }
+    })
+
     it('defaults ServerChan background-only mode to disabled', async () => {
         dir = makeTempDir()
 

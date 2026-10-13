@@ -15,8 +15,8 @@ plugins {
 
 // FCM (B-M4a): official builds inject google-services.json in CI; self-builders
 // drop in their own (see ../README.md "Firebase / push"); everyone else builds
-// without it — Firebase then never initializes and PushBinding reports push as
-// unavailable, so every push code path no-ops cleanly.
+// without it — Firebase then never initializes and the FCM adapter is unavailable.
+// Other configured providers remain independent.
 val officialBuild = providers.gradleProperty("hapiOfficialBuild").map(String::toBooleanStrict).orElse(false).get()
 val googleServicesFile = file("google-services.json")
 if (officialBuild) {
@@ -61,6 +61,12 @@ fun signingSecret(property: String, env: String): String? =
 val uploadKeystorePath = signingSecret("hapiUploadKeystore", "HAPI_UPLOAD_KEYSTORE")
     ?.replaceFirst(Regex("^~"), System.getProperty("user.home"))
 
+// Client identifiers only. VIVO_APP_SECRET belongs exclusively on the hub.
+val vivoAppId = signingSecret("hapiVivoAppId", "VIVO_APP_ID")?.trim().orEmpty()
+val vivoAppKey = signingSecret("hapiVivoAppKey", "VIVO_APP_KEY")?.trim().orEmpty()
+require(vivoAppId.isEmpty() == vivoAppKey.isEmpty()) { "Configure both hapiVivoAppId and hapiVivoAppKey, or neither" }
+require(vivoAppId.isEmpty() || vivoAppId.matches(Regex("[1-9][0-9]*"))) { "hapiVivoAppId must be a positive integer" }
+
 if (officialBuild) {
     require(uploadKeystorePath != null && file(uploadKeystorePath).isFile) { "Official builds require a release signing keystore" }
     require(signingSecret("hapiUploadKeystorePassword", "HAPI_UPLOAD_KEYSTORE_PASSWORD") != null) {
@@ -80,8 +86,12 @@ android {
             value.toInt().also { require(it > 0) { "hapiVersionCode must be positive" } }
         }.orElse(1).get()
         // Tracks the hapi CLI/hub release train.
-        versionName = providers.gradleProperty("hapiVersionName").orElse("0.30.7-youngfine.3").get()
+        versionName = providers.gradleProperty("hapiVersionName").orElse("0.30.7-youngfine.4").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("boolean", "VIVO_PUSH_CONFIGURED", (vivoAppId.isNotEmpty()).toString())
+        manifestPlaceholders["vivoAppId"] = vivoAppId
+        manifestPlaceholders["vivoAppKey"] = vivoAppKey
+        manifestPlaceholders["vivoPushConfigured"] = vivoAppId.isNotEmpty().toString()
     }
 
     signingConfigs {
@@ -176,6 +186,7 @@ dependencies {
     // the classpath; whether it *activates* depends on google-services.json
     // (conditional plugin above) — PushBinding gates every use at runtime.
     implementation(libs.firebase.messaging)
+    implementation(libs.vivo.push)
     implementation(libs.androidx.work.runtime.ktx)
     constraints {
         // Version floor only: firebase-messaging → play-services-base drags in

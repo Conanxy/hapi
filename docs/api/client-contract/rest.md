@@ -258,15 +258,32 @@ Source: `hub/src/web/routes/devices.ts`; full push contract in [`native-companio
 
 | Method & path | Request | Response |
 |---|---|---|
-| `POST /api/devices/register` | `{token, platform: 'phone'\|'wear'\|'ios', deviceId, pushKey?}` (deviceId: any stable 1–128-char install id) | `{ok: true}` (upsert) |
+| `POST /api/devices/register` | `{token, platform: 'phone'\|'wear'\|'ios'\|'vivo', deviceId, pushKey?}` (deviceId: any stable 1–128-char install id) | `{ok: true}` (upsert) |
 | `DELETE /api/devices/register` | `{token}` | `{ok: true}` |
+| `GET /api/devices` | — | `{devices: [{deviceId, platform, updatedAt, providerId, enabled, testable}]}` |
+| `POST /api/devices/test` | `{deviceId, platform}` | `{status: 'accepted', providerId, retryAfterSeconds: 10}` |
 
-`pushKey` is base64 of exactly 32 bytes. It is required for iOS; phone
+`pushKey` is base64 of exactly 32 bytes. It is required for iOS and vivo; phone
 registrations may omit it for direct FCM, but Android relay delivery requires
 it and the current Android app supplies it. Supplied phone keys are validated;
 Wear ignores the field. Invalid registration bodies return 400. Upserts are
 keyed by `(namespace, deviceId, platform)`. The `wear` protocol value does not
 imply a Wear OS app is included in this repository.
+
+Listing/testing is JWT-authenticated and namespace-scoped. Device metadata
+never includes tokens, encryption keys or provider credentials; list/test
+responses use `Cache-Control: no-store`. Tests send a fixed non-sensitive
+`type: "test"` notification to exactly the chosen device through its registered
+provider, bypassing ordinary session notification suppression. Android test
+taps open the app, not the synthetic session `__hapi_push_test__`.
+FCM and Android relay/vivo support tests; iOS tests are currently unsupported.
+Android relay does not support Wear tests. `accepted` confirms provider
+acceptance, not device receipt. Invalid bodies return 400, unregistered or
+foreign-namespace devices 404, disabled/unsupported tests 503, and provider
+failure 502. Tests have an in-memory 10-second cooldown per namespace/provider,
+including failed sends; concurrent sends are blocked until completion.
+429 includes `Retry-After` and `retryAfterSeconds`. Cooldowns reset on Hub
+restart and do not replace vendor quotas.
 
 ### Visibility
 

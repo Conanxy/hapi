@@ -66,7 +66,33 @@
                     android:host="bind"
                     android:scheme="hapicompanion" />
             </intent-filter>
+            <!-- vivo opens the exported activity; the target is authenticated
+                 by the device's encrypted envelope, never a plaintext id. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="push"
+                    android:scheme="hapicompanion" />
+            </intent-filter>
         </activity>
+
+        <meta-data android:name="app_id" android:value="${vivoAppId}" />
+        <meta-data android:name="api_key" android:value="${vivoAppKey}" />
+        <receiver
+            android:name=".push.HapiVivoPushReceiver"
+            android:enabled="${vivoPushConfigured}"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.vivo.pushclient.action.RECEIVE" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name="com.vivo.push.sdk.service.CommandClientService"
+            android:enabled="${vivoPushConfigured}"
+            android:exported="true"
+            android:permission="com.push.permission.UPSTAGESERVICE" />
 
         <!-- Composer attachments (B-M3f): scratch Uri for TakePicture camera
              captures (cache/attachments/), granted to the camera app only. -->

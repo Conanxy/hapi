@@ -12,7 +12,7 @@ golden fixtures (`shared/fixtures/`).
 
 The app provides sessions/chat, approvals and questions, new sessions,
 attachments, files/Git, Scratchlist, standard dictation, usage/storage,
-settings and encrypted-relay or direct-FCM notifications. Model and permission
+settings and encrypted-relay, direct-FCM or opt-in vivo test notifications. Model and permission
 controls follow agent/session capabilities; usage/storage require the owner
 namespace. See the [native app guide](../docs/guide/native-apps.md) for platform
 differences, pairing and features currently available through the web.
@@ -31,7 +31,8 @@ differences, pairing and features currently available through the web.
   `DictationController` is tested with recorder/API fakes.
 - **Background actions:** FCM permission Allow/Deny and inline Reply enqueue
   WorkManager jobs. Workers resolve paired hubs using stored credentials,
-  without requiring a foreground `HubGraph`. Firebase-free builds skip push.
+  without requiring a foreground `HubGraph`. Firebase-free builds skip FCM;
+  configured vivo builds can use vivo independently.
 
 ## Building
 
@@ -143,7 +144,7 @@ the shared Android/iOS relay URL. One hub cannot mix private-project builds
 and official-project builds.
 
 **Builds without Firebase:** the Google services plugin stays conditional.
-Without `app/google-services.json`, Firebase does not initialize and push
+Without `app/google-services.json`, Firebase does not initialize and FCM
 paths no-op; ordinary PR builds require no credentials. Official builds use
 a separate mandatory configuration check (below).
 
@@ -170,6 +171,78 @@ tapping opens the session against the active hub.
 
 See [native companion contract](../docs/api/native-companion-contract.md)
 for wire details and [relay deployment](../relay/README.md) for maintainer setup.
+
+### vivo test push
+
+After pairing and registering the phone, web **Settings → General → Companion
+→ Push devices → Send test push** sends one fixed test notification to that
+installation. The button has a 10-second cooldown. Provider acceptance is not
+proof of handset receipt. Tapping a test opens HAPI without opening a session.
+
+Register the Android application as **HAPI**, package **`run.hapi.companion`**
+(not the Kotlin namespace `app.hapi.companion`). Developer-account approval
+and push entitlement remain subject to vivo's console; creating an application
+does not guarantee formal push access.
+
+Configure both client identifiers in gitignored `android/local.properties`,
+user-global Gradle properties, or the matching environment variables:
+
+| Gradle/local property | Environment |
+|---|---|
+| `hapiVivoAppId` | `VIVO_APP_ID` |
+| `hapiVivoAppKey` | `VIVO_APP_KEY` |
+
+The app uses `vivo:vpush:4.1.7.0`. Both values must be present or absent;
+no identifiers leaves the vivo components disabled. **Never put
+`VIVO_APP_SECRET` in the app**: it belongs only on the hub. Configure that hub:
+
+```sh
+HAPI_VIVO_PUSH=test
+VIVO_APP_ID=<same app id>
+VIVO_APP_KEY=<same app key>
+VIVO_APP_SECRET=<server secret>
+```
+
+On an eligible vivo/iQOO device, Settings offers vivo push. It is off by
+default and initializes the SDK only after explicit privacy consent.
+Allow system notifications too. Enabling vivo selects it instead of FCM;
+disabling it falls back to FCM when Firebase and Play services are available.
+Registration, token rotation and retries use every paired hub. The status
+reports SDK registration, not confirmed hub configuration or message receipt.
+
+This adapter deliberately sends **API single-device test messages**
+(`pushMode: 1`), not production messages. For unpublished/restricted apps,
+vivo documents a limit of 1000 test messages per app per day, delivery only
+to currently online devices, and no offline caching. Background/process-dead
+delivery uses the system push service and does not require an app kept in
+the foreground; force-stop, device policy and actual receipt require
+real-device verification. This is not a production/offline-delivery guarantee.
+
+The system displays a generic HAPI activity notice, with no session name,
+chat text or approval details. The tap target is AES-GCM encrypted and opens
+the session after app-side decryption. There are no inline Reply/Allow/Deny
+actions for vivo; the existing active-hub-only tap limitation still applies.
+
+References: [SDK integration](https://dev.vivo.com.cn/documentCenter/doc/365),
+[test messages](https://dev.vivo.com.cn/documentCenter/doc/735),
+[SDK privacy compliance](https://dev.vivo.com.cn/documentCenter/doc/879).
+
+### Adding a push provider
+
+`core/data/.../push/PushProvider.kt` defines the SDK adapter contract.
+`PushCoordinator.kt` owns selection, registration, token rotation, switching,
+sign-out and provider-tagged retries. `app/.../push/PushProviders.kt` is the
+ordered registry: the first available provider wins. Add an adapter there,
+feed SDK callbacks to `PushCoordinator.onTokenRotated(providerId, token)`,
+and apply consent/availability changes through `updateSelection`.
+Do not add provider branches to session logic or `RegisterDeviceWorker`.
+
+On the hub, add the transport adapter to `hub/src/push-native/providers.ts`
+and its wire platform to `platforms.ts` with encryption/Android grouping
+requirements. Providers use the shared `NativePushSender` contract and
+notification channel; iOS retains its APNs-specific channel. A new SDK still
+requires its dependency, manifest, credentials and consent setup, plus tests
+and privacy disclosures.
 
 ### Official APK/AAB builds
 

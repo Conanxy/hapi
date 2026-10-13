@@ -28,11 +28,12 @@ class HapiFirebaseMessagingService : FirebaseMessagingService() {
 
     /** Token minted or rotated: (re-)register it with every paired hub. */
     override fun onNewToken(token: String) {
-        appGraph.onPushTokenRotated(token)
+        appGraph.onPushTokenRotated("fcm", token)
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
         val graph = appGraph
+        if (graph.pushCoordinator.selectedProviderId != "fcm") return
         val payload = graph.pushMessageDecoder.decode(message.data) ?: return
         if (shouldSuppressPush(graph.foreground, graph.openChatSessionId.value, payload.sessionId)) {
             return

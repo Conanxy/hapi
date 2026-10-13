@@ -55,6 +55,9 @@ import type {
     ReopenSessionResponse,
     SqliteStorageUsageResponse,
     HubSettingsResponse,
+    NativePushDevicesResponse,
+    NativePushTestRequest,
+    NativePushTestResponse,
     UpdateHubSettingsRequest,
     UsageSummaryResponse,
     UploadFileResponse
@@ -149,6 +152,17 @@ export class ApiError extends Error {
 }
 
 export class ApiClient {
+    async getNativePushDevices(): Promise<NativePushDevicesResponse> {
+        return await this.request<NativePushDevicesResponse>('/api/devices')
+    }
+
+    async testNativePush(target: NativePushTestRequest): Promise<NativePushTestResponse> {
+        return await this.request<NativePushTestResponse>('/api/devices/test', {
+            method: 'POST',
+            body: JSON.stringify(target)
+        })
+    }
+
     private token: string
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null

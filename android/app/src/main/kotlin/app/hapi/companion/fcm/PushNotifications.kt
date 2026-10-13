@@ -51,7 +51,7 @@ object PushNotifications {
 
     /** Renders [payload] (already past the suppress-when-open check). */
     fun show(context: Context, payload: PushPayload) {
-        val builder = baseBuilder(context, payload.channelId, payload.sessionId)
+        val builder = baseBuilder(context, payload.channelId, payload.navigationSessionId)
             .setContentTitle(payload.displayTitle)
             .setContentText(firstLine(payload.displayBody))
             .setStyle(NotificationCompat.BigTextStyle().bigText(payload.displayBody))
@@ -123,7 +123,7 @@ object PushNotifications {
     private fun baseBuilder(context: Context, channelId: String, sessionId: String?) =
         NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_stat_hapi)
-            .apply { sessionId?.let { setContentIntent(openSessionIntent(context, it)) } }
+            .setContentIntent(openSessionIntent(context, sessionId))
 
     private fun notify(context: Context, tag: String, notification: Notification) {
         val manager = NotificationManagerCompat.from(context)
@@ -143,14 +143,14 @@ object PushNotifications {
      * (`AppGraph.pendingOpenSessionId`). Deliberately *not* a URI deep link:
      * this route is internal, nothing external should be able to speak it.
      */
-    private fun openSessionIntent(context: Context, sessionId: String): PendingIntent {
+    private fun openSessionIntent(context: Context, sessionId: String?): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)
             .setAction(ACTION_OPEN_SESSION)
-            .putExtra(EXTRA_SESSION_ID, sessionId)
+            .apply { sessionId?.let { putExtra(EXTRA_SESSION_ID, it) } }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return PendingIntent.getActivity(
             context,
-            requestCode(sessionId, slot = 0),
+            requestCode(sessionId ?: "hapi-app", slot = 0),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

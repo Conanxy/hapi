@@ -32,7 +32,8 @@ class RegisterDeviceWorker(
         // The hub may have been signed out while this retry waited.
         if (hubUrl !in appGraph.hubRegistry.state.value.hubs) return Result.success()
         return try {
-            appGraph.deviceRegistrar.registerHubOnce(hubUrl)
+            val providerId = inputData.getString(KEY_PROVIDER) ?: return Result.failure()
+            appGraph.pushCoordinator.registerHubOnce(providerId, hubUrl)
             Result.success()
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -43,20 +44,21 @@ class RegisterDeviceWorker(
 
     companion object {
         const val KEY_HUB_URL = "hubUrl"
+        private const val KEY_PROVIDER = "provider"
         private const val MAX_ATTEMPTS = 6
         private const val BACKOFF_SECONDS = 30L
 
         /** One pending retry per hub; a fresh failure replaces the schedule. */
-        fun enqueueRetry(context: Context, hubUrl: String) {
+        fun enqueueRetry(context: Context, hubUrl: String, providerId: String) {
             val work = OneTimeWorkRequestBuilder<RegisterDeviceWorker>()
-                .setInputData(workDataOf(KEY_HUB_URL to hubUrl))
+                .setInputData(workDataOf(KEY_HUB_URL to hubUrl, KEY_PROVIDER to providerId))
                 .setConstraints(
                     Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
                 )
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniqueWork("push-register-$hubUrl", ExistingWorkPolicy.REPLACE, work)
+                .enqueueUniqueWork("push-register-$providerId-$hubUrl", ExistingWorkPolicy.REPLACE, work)
         }
     }
 }

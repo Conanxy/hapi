@@ -77,6 +77,13 @@ data class PushPayload(
     val contractVersion: String?,
     val notifySummary: PushNotifySummary?,
 ) {
+    /** Test taps open the app without navigating to the synthetic session id. */
+    val isTest: Boolean
+        get() = rawType == "test"
+
+    /** No session navigation for synthetic test messages. */
+    val navigationSessionId: String?
+        get() = sessionId.takeUnless { isTest }
 
     /**
      * False when the hub stamped a `contractVersion` this client does not

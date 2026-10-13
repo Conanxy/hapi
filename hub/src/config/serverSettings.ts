@@ -20,6 +20,10 @@ const OLD_SETTINGS_FIELDS = ['webappHost', 'webappPort', 'webappUrl'] as const
 const PUSH_SETTING_KEYS = [
     ['fcmServiceAccountPath', 'FCM_SERVICE_ACCOUNT_PATH'],
     ['androidPushMode', 'HAPI_ANDROID_PUSH'],
+    ['vivoPushMode', 'HAPI_VIVO_PUSH'],
+    ['vivoAppId', 'VIVO_APP_ID'],
+    ['vivoAppKey', 'VIVO_APP_KEY'],
+    ['vivoAppSecret', 'VIVO_APP_SECRET'],
     ['iosPushMode', 'HAPI_IOS_PUSH'],
     ['iosPushRelayUrl', 'HAPI_PUSH_RELAY_URL'],
     ['apnsKeyP8Path', 'APNS_KEY_P8_PATH'],
@@ -43,6 +47,10 @@ export interface ServerSettings {
     corsOrigins: string[]
     androidPushMode: string | null
     fcmServiceAccountPath: string | null
+    vivoPushMode: string | null
+    vivoAppId: string | null
+    vivoAppKey: string | null
+    vivoAppSecret: string | null
     iosPushMode: string | null
     iosPushRelayUrl: string | null
     apnsKeyP8Path: string | null
@@ -137,6 +145,10 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
             corsOrigins: 'default',
             androidPushMode: 'default',
             fcmServiceAccountPath: 'default',
+            vivoPushMode: 'default',
+            vivoAppId: 'default',
+            vivoAppKey: 'default',
+            vivoAppSecret: 'default',
             iosPushMode: 'default',
             iosPushRelayUrl: 'default',
             apnsKeyP8Path: 'default',
@@ -284,6 +296,10 @@ export async function loadServerSettings(dataDir: string): Promise<ServerSetting
         const push: Record<PushSettingKey, string | null> = {
             androidPushMode: null,
             fcmServiceAccountPath: null,
+            vivoPushMode: null,
+            vivoAppId: null,
+            vivoAppKey: null,
+            vivoAppSecret: null,
             iosPushMode: null,
             iosPushRelayUrl: null,
             apnsKeyP8Path: null,

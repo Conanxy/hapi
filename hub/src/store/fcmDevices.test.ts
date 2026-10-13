@@ -2,6 +2,22 @@ import { describe, expect, it } from 'bun:test'
 import { Store } from './index'
 
 describe('fcmDevices upsert', () => {
+    it('switches Android providers without touching another install, namespace or iOS binding', () => {
+        const store = new Store(':memory:')
+        try {
+            store.fcm.upsertDevice('default', { token: 'fcm', deviceId: 'install', platform: 'phone' })
+            store.fcm.upsertDevice('default', { token: 'other-fcm', deviceId: 'other-install', platform: 'phone' })
+            store.fcm.upsertDevice('other', { token: 'other-ns', deviceId: 'install', platform: 'phone' })
+            store.fcm.upsertDevice('default', { token: 'apns', deviceId: 'install', platform: 'ios' })
+            store.fcm.upsertDevice('default', { token: 'vivo', deviceId: 'install', platform: 'vivo' })
+            expect(store.fcm.getDevicesByNamespace('default').map(device => device.token).sort()).toEqual(['apns', 'other-fcm', 'vivo'])
+            expect(store.fcm.getDevicesByNamespace('other')[0].token).toBe('other-ns')
+            store.fcm.upsertDevice('default', { token: 'fcm-rotated', deviceId: 'install', platform: 'phone' })
+            expect(store.fcm.getDevicesByNamespace('default', ['vivo'])).toHaveLength(0)
+        } finally {
+            store.close()
+        }
+    })
     it('moves a token to a new namespace and removes the old namespace row', () => {
         const store = new Store(':memory:')
         const device = { token: 'shared-token', platform: 'phone' as const, deviceId: 'pixel-1' }

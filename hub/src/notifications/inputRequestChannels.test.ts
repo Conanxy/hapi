@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test'
 import type { Session } from '../sync/syncEngine'
 import { Store } from '../store'
-import { FcmNotificationChannel } from '../fcm/fcmNotificationChannel'
+import { NativePushNotificationChannel } from '../push-native/nativePushNotificationChannel'
 import { AndroidRelayService } from '../fcm/androidRelayService'
 import { IosPushNotificationChannel } from '../push-ios/iosPushChannel'
 import { IosPushService } from '../push-ios/iosPushService'
@@ -43,8 +43,7 @@ describe('input-request notification channels', () => {
             } }
             const channel = platform === 'ios'
                 ? new IosPushNotificationChannel(new IosPushService(transport, store))
-                : new FcmNotificationChannel(new AndroidRelayService(transport, store),
-                    { sendToast: async () => 1 } as never, { hasVisibleConnection: () => true } as never)
+                : new NativePushNotificationChannel(new AndroidRelayService(transport, store))
             const ctx = { nativeGate: { sent: false } }
             await channel.sendPermissionRequest(session, ctx)
             expect(ctx.nativeGate.sent).toBe(true)

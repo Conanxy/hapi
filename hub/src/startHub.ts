@@ -12,15 +12,7 @@ import { SSEManager } from './sse/sseManager'
 import { getOrCreateVapidKeys } from './config/vapidKeys'
 import { PushService } from './push/pushService'
 import { PushNotificationChannel } from './push/pushNotificationChannel'
-import { FcmService } from './fcm/fcmService'
-import { FcmNotificationChannel } from './fcm/fcmNotificationChannel'
-import { resolveAndroidPushConfig } from './fcm/androidPushConfig'
-import { AndroidRelayService } from './fcm/androidRelayService'
-import { ApnsClient } from './push-ios/apnsClient'
-import { RelayClient } from './push-native/relayClient'
-import { IosPushService } from './push-ios/iosPushService'
-import { IosPushNotificationChannel } from './push-ios/iosPushChannel'
-import { resolveIosPushConfig } from './push-ios/iosPushConfig'
+import { createNativePushProviders } from './push-native/providers'
 import { VisibilityTracker } from './visibility/visibilityTracker'
 import { TunnelManager } from './tunnel'
 import { refreshRejectedRelayAuthKey, resolveRelayAuthKey } from './tunnel/relayAuth'
@@ -211,35 +203,13 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     // Accountable principal for A2A work-graph notify ingest (P3).
     syncEngine.setHubOwnerUserId(await getOrCreateOwnerId())
 
-    const androidPushConfig = resolveAndroidPushConfig(config)
     const notificationChannels: NotificationChannel[] = []
-    if (androidPushConfig.mode === 'fcm') {
-        const { fcm } = androidPushConfig
-        const sender = new FcmService(fcm.projectId, fcm.serviceAccount, store)
-        notificationChannels.push(new FcmNotificationChannel(sender, sseManager, visibilityTracker, store))
-        console.log(`[Hub] Android push: fcm (project: ${fcm.projectId})`)
-    } else if (androidPushConfig.mode === 'relay') {
-        const sender = new AndroidRelayService(new RelayClient(androidPushConfig.relayUrl, 'android'), store)
-        notificationChannels.push(new FcmNotificationChannel(sender, sseManager, visibilityTracker, store))
-        console.log(`[Hub] Android push: relay (url: ${androidPushConfig.relayUrl})`)
-    } else {
-        console.log(`[Hub] Android push: off (${androidPushConfig.reason})`)
-    }
-
-    // iOS push (P1): encrypt-then-route sibling of the FCM channel. Ordering
-    // matters - both native channels run before PushNotificationChannel so a
-    // successful native send sets the nativeGate and suppresses web-push.
-    const iosPushConfig = resolveIosPushConfig(config)
-    if (iosPushConfig.mode === 'relay') {
-        const iosPushService = new IosPushService(new RelayClient(iosPushConfig.relayUrl, 'ios'), store)
-        notificationChannels.push(new IosPushNotificationChannel(iosPushService, store))
-        console.log(`[Hub] iOS push: relay (${iosPushConfig.source}, url: ${iosPushConfig.relayUrl})`)
-    } else if (iosPushConfig.mode === 'apns') {
-        const iosPushService = new IosPushService(new ApnsClient(iosPushConfig), store)
-        notificationChannels.push(new IosPushNotificationChannel(iosPushService, store))
-        console.log(`[Hub] iOS push: apns (${iosPushConfig.env}, topic: ${iosPushConfig.bundleId})`)
-    } else {
-        console.log(`[Hub] iOS push: off (${iosPushConfig.reason})`)
+    // All native providers run before Web Push so successful native sends
+    // participate in the existing per-dispatch fallback gate.
+    const nativePushProviders = createNativePushProviders(config, { store })
+    for (const provider of nativePushProviders) {
+        if (provider.channel) notificationChannels.push(provider.channel)
+        console.log(`[Hub] ${provider.id} push: ${provider.status}`)
     }
 
     notificationChannels.push(
@@ -284,6 +254,7 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
         jwtSecret,
         store,
         vapidPublicKey: vapidKeys.publicKey,
+        nativePushProviders,
         socketEngine: socketServer.engine,
         corsOrigins,
         relayMode: relayFlag.enabled,

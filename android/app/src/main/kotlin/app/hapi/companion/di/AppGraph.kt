@@ -13,7 +13,8 @@ import app.hapi.companion.feature.settings.ThemePrefs
 import app.hapi.data.push.EncryptedPrefsPushIdentityStore
 import app.hapi.data.push.PushIdentityManager
 import app.hapi.data.push.PushMessageDecoder
-import app.hapi.companion.push.PushBinding
+import app.hapi.companion.push.VivoPushBinding
+import app.hapi.companion.push.pushProviders
 import app.hapi.data.api.HapiApi
 import app.hapi.data.auth.AuthEvents
 import app.hapi.data.auth.AuthTerminalReason
@@ -22,7 +23,7 @@ import app.hapi.data.auth.EncryptedPrefsCredentialStore
 import app.hapi.data.auth.HubRegistry
 import app.hapi.data.auth.HubRegistryStorage
 import app.hapi.data.push.ApiPushDeviceGateway
-import app.hapi.data.push.DeviceRegistrar
+import app.hapi.data.push.PushCoordinator
 import app.hapi.data.push.PushActionRunner
 import app.hapi.data.push.PushHubAccess
 import app.hapi.protocol.pairing.BindLink
@@ -47,6 +48,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 
@@ -176,29 +178,24 @@ class AppGraph(context: Context) {
     /** Executes notification actions with active-hub-first resolution. */
     val pushActionRunner: PushActionRunner = PushActionRunner(pushHubAccess)
 
-    /**
-     * FCM device registration fan-out: every paired hub gets this install's
-     * token and persisted encryption identity (`POST /api/devices/register`).
-     * All entry points no-op when Firebase isn't configured
-     * ([PushBinding.currentToken] returns null).
-     */
+    /** Shared install identity; provider adapters only supply their own tokens. */
     val pushIdentityManager = PushIdentityManager(EncryptedPrefsPushIdentityStore(appContext))
     val pushMessageDecoder = PushMessageDecoder(pushIdentityManager::existingKey)
-
-    val deviceRegistrar: DeviceRegistrar = DeviceRegistrar(
+    val vivoPush = VivoPushBinding(appContext)
+    val pushCoordinator = PushCoordinator(
+        providers = pushProviders(appContext, vivoPush),
         registry = hubRegistry,
-        gateway = ApiPushDeviceGateway(pushHubAccess),
-        tokenSource = { PushBinding.currentToken(appContext) },
+        gatewayFactory = { provider -> ApiPushDeviceGateway(pushHubAccess, platform = provider.platform) },
         identities = { withContext(Dispatchers.IO) { pushIdentityManager.getOrCreate() } },
-        retryScheduler = { hubUrl -> RegisterDeviceWorker.enqueueRetry(appContext, hubUrl) },
+        retryScheduler = { providerId, hubUrl -> RegisterDeviceWorker.enqueueRetry(appContext, hubUrl, providerId) },
         scope = scope,
     )
 
-    /** `onNewToken` hook: waits for the roster load, then re-registers everywhere. */
-    fun onPushTokenRotated(token: String) {
+    /** SDK callbacks share one entry point; stale providers are rejected by the coordinator. */
+    fun onPushTokenRotated(providerId: String, token: String) {
         scope.launch {
             awaitReady()
-            deviceRegistrar.onNewToken(token)
+            pushCoordinator.onTokenRotated(providerId, token)
         }
     }
 
@@ -226,7 +223,7 @@ class AppGraph(context: Context) {
             mutableReady.value = true
             // Roster is loaded: the registrar's first emission re-registers
             // every persisted hub (cheap upsert), then fresh pairings as added.
-            deviceRegistrar.start()
+            pushCoordinator.start()
             hubRegistry.state
                 .map { it.activeHubUrl }
                 .distinctUntilChanged()
@@ -242,7 +239,15 @@ class AppGraph(context: Context) {
      * none). The active [HubGraph] swap follows via the registry observer.
      */
     suspend fun signOut(hubUrl: String) {
-        withTimeoutOrNull(UNREGISTER_TIMEOUT_MS) { deviceRegistrar.unregisterHub(hubUrl) }
+        withTimeoutOrNull(UNREGISTER_TIMEOUT_MS) {
+            try {
+                pushCoordinator.unregisterHub(hubUrl)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // Sign-out must remain possible when the provider SDK is unavailable.
+            }
+        }
         withContext(Dispatchers.IO) { credentialStore.delete(hubUrl) }
         hubRegistry.removeHub(hubUrl)
     }

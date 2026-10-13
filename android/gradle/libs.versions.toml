@@ -37,6 +37,7 @@ coil = "2.7.0"
 # in 1.1.0 transitively, which lintVital rejects next to ActivityResult APIs).
 workManager = "2.10.1"
 firebaseMessaging = "24.1.0"
+vivoPush = "4.1.7.0"
 googleServices = "4.4.2"
 fragment = "1.8.5"
 # Per-app locales (B-M5a): AppCompatDelegate.setApplicationLocales back to
@@ -91,6 +92,7 @@ coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coi
 # Push (B-M4a): FCM transport + expedited workers for notification actions.
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workManager" }
 firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging", version.ref = "firebaseMessaging" }
+vivo-push = { group = "vivo", name = "vpush", version.ref = "vivoPush" }
 # Constraint-only (see :app build file) — nothing in the app uses fragments.
 androidx-fragment = { group = "androidx.fragment", name = "fragment", version.ref = "fragment" }
 

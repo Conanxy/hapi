@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type { Session } from '../sync/syncEngine'
-import { FcmNotificationChannel } from './fcmNotificationChannel'
-import type { FcmSendPayload } from './fcmService'
+import { NativePushNotificationChannel } from './nativePushNotificationChannel'
+import type { NativePushPayload } from './types'
 
 function createSession(overrides: Partial<Session> = {}): Session {
     return {
@@ -14,24 +14,15 @@ function createSession(overrides: Partial<Session> = {}): Session {
     } as Session
 }
 
-describe('FcmNotificationChannel', () => {
+describe('NativePushNotificationChannel', () => {
     it('always fires FCM regardless of PWA visibility (wrist-first)', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const toasts: unknown[] = []
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            {
-                sendToast: async (_namespace: string, event: unknown) => {
-                    toasts.push(event)
-                    return 1
-                }
-            } as never,
-            {
-                hasVisibleConnection: () => true
             } as never
         )
 
@@ -47,18 +38,12 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('includes requestId on permission-request payloads', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            {
-                sendToast: async () => 0
-            } as never,
-            {
-                hasVisibleConnection: () => false
             } as never
         )
 
@@ -77,18 +62,12 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('enriches permission-request body with tool args (Edit)', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            {
-                sendToast: async () => 0
-            } as never,
-            {
-                hasVisibleConnection: () => false
             } as never
         )
 
@@ -124,15 +103,13 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('truncates long Grep permission patterns for FCM data limits', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+            } as never
         )
 
         await channel.sendPermissionRequest(createSession({
@@ -152,18 +129,12 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('falls back gracefully when no tool args are present', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            {
-                sendToast: async () => 0
-            } as never,
-            {
-                hasVisibleConnection: () => false
             } as never
         )
 
@@ -184,7 +155,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     function makeStoreWithMessages(messages: Array<{ content: unknown }>) {
-        // Minimal store stub: only the bits FcmNotificationChannel touches.
+        // Minimal store stub: only the bits NativePushNotificationChannel touches.
         // Mirrors the real `getMessages` contract: callers receive the last N
         // rows in ASCENDING seq order (oldest first, latest last).
         return {
@@ -204,7 +175,7 @@ describe('FcmNotificationChannel', () => {
     }
 
     it('sendReady prefers AGENT_NOTIFY_SUMMARY when last assistant message has one', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const store = makeStoreWithMessages([
             // DESC order: index 0 = latest. Latest assistant text contains a summary.
             {
@@ -220,15 +191,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -244,7 +212,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady caps long AGENT_NOTIFY_SUMMARY text for FCM data limits', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const longSummary = 'S'.repeat(400)
         const longAction = 'A'.repeat(400)
         const store = makeStoreWithMessages([
@@ -261,15 +229,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -282,7 +247,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady respects tiny action budget when summary fills the glance limit', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const summary278 = 'S'.repeat(278)
         const store = makeStoreWithMessages([
             {
@@ -298,15 +263,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -316,7 +278,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady caps auxiliary notifySummary fields for FCM data limits', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const longAgent = 'G'.repeat(200)
         const longProject = 'P'.repeat(200)
         const store = makeStoreWithMessages([
@@ -333,15 +295,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -353,7 +312,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady truncates last assistant text when no summary is present', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const longText = 'A'.repeat(500)
         const store = makeStoreWithMessages([
             {
@@ -363,15 +322,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -383,7 +339,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady skips tool-call messages and uses the last assistant TEXT message', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         // Real getMessages returns ASC (oldest first, newest last). The newest
         // here is a tool-call-result; the channel must walk back past two
         // tool-call frames to find the actual assistant text.
@@ -407,15 +363,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -424,7 +377,7 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady picks the LATEST assistant text when multiple text messages exist (ASC ordering regression guard)', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         // Two text messages, oldest first - the channel must return the
         // last one ("Latest reply.") not the first ("Older reply.").
         // This guards against a real bug where we walked the array
@@ -443,15 +396,12 @@ describe('FcmNotificationChannel', () => {
                 }
             }
         ])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -460,17 +410,14 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady falls back to "is waiting" line when no agent text exists', async () => {
-        const sent: FcmSendPayload[] = []
+        const sent: NativePushPayload[] = []
         const store = makeStoreWithMessages([])
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never,
-            store
+            } as never, store
         )
 
         await channel.sendReady(createSession())
@@ -480,15 +427,13 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendReady falls back when the channel has no store (test/legacy wiring)', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
             {
-                sendToNamespace: async (_namespace: string, payload: FcmSendPayload) => {
+                sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
                     sent.push(payload)
                 }
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+            } as never
             // store omitted on purpose
         )
 
@@ -499,11 +444,9 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sets severity=info on ready notifications', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
-            { sendToNamespace: async (_n: string, p: FcmSendPayload) => { sent.push(p) } } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
+            { sendToNamespace: async (_n: string, p: NativePushPayload) => { sent.push(p) } } as never
         )
         await channel.sendReady(createSession())
         expect(sent[0].data.severity).toBe('info')
@@ -511,12 +454,10 @@ describe('FcmNotificationChannel', () => {
 
     it('sets nativeGate.sent when FCM delivers at least one message', async () => {
         const gate = { sent: false }
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
                 sendToNamespace: async () => ({ sent: 1, failed: 0, invalidTokens: [] })
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+            } as never
         )
 
         await channel.sendReady(createSession(), { nativeGate: gate })
@@ -526,12 +467,10 @@ describe('FcmNotificationChannel', () => {
 
     it('leaves nativeGate.sent false when FCM sends zero messages', async () => {
         const gate = { sent: false }
-        const channel = new FcmNotificationChannel(
+        const channel = new NativePushNotificationChannel(
             {
                 sendToNamespace: async () => ({ sent: 0, failed: 1, invalidTokens: [] })
-            } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+            } as never
         )
 
         await channel.sendReady(createSession(), { nativeGate: gate })
@@ -540,11 +479,9 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sets severity=warning on permission-request notifications', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
-            { sendToNamespace: async (_n: string, p: FcmSendPayload) => { sent.push(p) } } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
+            { sendToNamespace: async (_n: string, p: NativePushPayload) => { sent.push(p) } } as never
         )
         await channel.sendPermissionRequest(createSession({
             agentState: { requests: { 'r-1': { tool: 'Bash', arguments: {} } } }
@@ -553,22 +490,18 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sets severity=success on completed task notifications', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
-            { sendToNamespace: async (_n: string, p: FcmSendPayload) => { sent.push(p) } } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
+            { sendToNamespace: async (_n: string, p: NativePushPayload) => { sent.push(p) } } as never
         )
         await channel.sendTaskNotification(createSession(), { status: 'completed', summary: 'Tests passed' })
         expect(sent[0].data.severity).toBe('success')
     })
 
     it('sets severity=error on failed task notifications', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
-            { sendToNamespace: async (_n: string, p: FcmSendPayload) => { sent.push(p) } } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
+            { sendToNamespace: async (_n: string, p: NativePushPayload) => { sent.push(p) } } as never
         )
         // The hub's failure detection catches 'failed' / 'error' / 'killed' / 'aborted'.
         for (const status of ['failed', 'error', 'killed', 'aborted']) {
@@ -579,11 +512,9 @@ describe('FcmNotificationChannel', () => {
     })
 
     it('sendTaskNotification caps long task summaries for FCM data limits', async () => {
-        const sent: FcmSendPayload[] = []
-        const channel = new FcmNotificationChannel(
-            { sendToNamespace: async (_n: string, p: FcmSendPayload) => { sent.push(p) } } as never,
-            { sendToast: async () => 0 } as never,
-            { hasVisibleConnection: () => false } as never
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel(
+            { sendToNamespace: async (_n: string, p: NativePushPayload) => { sent.push(p) } } as never
         )
         await channel.sendTaskNotification(createSession(), {
             status: 'completed',

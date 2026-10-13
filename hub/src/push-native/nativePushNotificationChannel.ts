@@ -3,17 +3,13 @@ import type { NotificationChannel, TaskNotification } from '../notifications/not
 import type { NotificationSendContext } from '../notifications/notificationSendContext'
 import { NATIVE_CONTRACT_VERSION, NativeNotificationComposer, type ComposedNativeNotification } from '../notifications/nativeNotificationComposer'
 import type { Store } from '../store'
-import type { SSEManager } from '../sse/sseManager'
-import type { VisibilityTracker } from '../visibility/visibilityTracker'
-import type { FcmSendPayload, AndroidPushSender } from './fcmService'
+import type { NativePushPayload, NativePushSender } from './types'
 
-export class FcmNotificationChannel implements NotificationChannel {
+export class NativePushNotificationChannel implements NotificationChannel {
     private readonly composer: NativeNotificationComposer
 
     constructor(
-        private readonly fcmService: AndroidPushSender,
-        private readonly sseManager: SSEManager,
-        private readonly visibilityTracker: VisibilityTracker,
+        private readonly sender: NativePushSender,
         private readonly store?: Store
     ) {
         this.composer = new NativeNotificationComposer(store)
@@ -24,7 +20,7 @@ export class FcmNotificationChannel implements NotificationChannel {
             return
         }
 
-        await this.deliver(session, this.toFcmPayload(this.composer.composePermissionRequest(session)), ctx)
+        await this.deliver(session, this.toPayload(this.composer.composePermissionRequest(session)), ctx)
     }
 
     async sendReady(session: Session, ctx?: NotificationSendContext): Promise<void> {
@@ -32,7 +28,7 @@ export class FcmNotificationChannel implements NotificationChannel {
             return
         }
 
-        await this.deliver(session, this.toFcmPayload(this.composer.composeReady(session)), ctx)
+        await this.deliver(session, this.toPayload(this.composer.composeReady(session)), ctx)
     }
 
     async sendTaskNotification(session: Session, notification: TaskNotification, ctx?: NotificationSendContext): Promise<void> {
@@ -40,10 +36,10 @@ export class FcmNotificationChannel implements NotificationChannel {
             return
         }
 
-        await this.deliver(session, this.toFcmPayload(this.composer.composeTask(session, notification)), ctx)
+        await this.deliver(session, this.toPayload(this.composer.composeTask(session, notification)), ctx)
     }
 
-    private toFcmPayload(composed: ComposedNativeNotification): FcmSendPayload {
+    private toPayload(composed: ComposedNativeNotification): NativePushPayload {
         return {
             title: composed.title,
             body: composed.body,
@@ -63,17 +59,10 @@ export class FcmNotificationChannel implements NotificationChannel {
         }
     }
 
-    private async deliver(session: Session, payload: FcmSendPayload, ctx?: NotificationSendContext): Promise<void> {
-        // Native companion is the canonical surface: always fire FCM when the
-        // hub asks us to. The previous SSE-toast shortcut here meant that
-        // when the operator had the PWA open in foreground, the watch got
-        // NOTHING - the in-page React toast was the only signal. That broke
-        // the wrist-first UX (the whole point of installing a watch app)
-        // and confused the operator about whether the agent was making
-        // progress. SSE in-page toasts are still emitted by the PWA's own
-        // SyncEngine event stream for users who want them; this channel's
-        // job is to reach the wrist, period.
-        const result = await this.fcmService.sendToNamespace(session.namespace, payload)
+    private async deliver(session: Session, payload: NativePushPayload, ctx?: NotificationSendContext): Promise<void> {
+        // Native delivery is independent of PWA visibility. Providers own
+        // transport details; successful delivery engages the Web Push gate.
+        const result = await this.sender.sendToNamespace(session.namespace, payload)
         if ((result?.sent ?? 0) > 0 && ctx?.nativeGate) {
             ctx.nativeGate.sent = true
         }

@@ -24,6 +24,8 @@
  *   the project id comes from the JSON itself)
  * - HAPI_IOS_PUSH: iOS push transport apns|relay|off (default: relay; settings: iosPushMode)
  * - HAPI_ANDROID_PUSH: Android push transport auto|relay|fcm|off (default: auto; settings: androidPushMode)
+ * - HAPI_VIVO_PUSH: optional vivo transport test|off (default: off; test messages only)
+ * - VIVO_APP_ID, VIVO_APP_KEY, VIVO_APP_SECRET: matching vivo application credentials
  * - HAPI_PUSH_RELAY_URL: shared native push relay URL (settings: iosPushRelayUrl)
  * - APNS_KEY_P8_PATH, APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, APNS_ENV:
  *   direct-APNs credentials (settings: apnsKeyP8Path, apnsKeyId, apnsTeamId, apnsBundleId, apnsEnv)
@@ -53,6 +55,10 @@ export interface ConfigSources {
     corsOrigins: ConfigSource
     androidPushMode: ConfigSource
     fcmServiceAccountPath: ConfigSource
+    vivoPushMode: ConfigSource
+    vivoAppId: ConfigSource
+    vivoAppKey: ConfigSource
+    vivoAppSecret: ConfigSource
     iosPushMode: ConfigSource
     iosPushRelayUrl: ConfigSource
     apnsKeyP8Path: ConfigSource
@@ -116,6 +122,10 @@ class Configuration {
     // fcm/fcmConfig.ts and push-ios/iosPushConfig.ts.
     public readonly androidPushMode: string | null
     public readonly fcmServiceAccountPath: string | null
+    public readonly vivoPushMode: string | null
+    public readonly vivoAppId: string | null
+    public readonly vivoAppKey: string | null
+    public readonly vivoAppSecret: string | null
     public readonly iosPushMode: string | null
     public readonly iosPushRelayUrl: string | null
     public readonly apnsKeyP8Path: string | null
@@ -151,6 +161,10 @@ class Configuration {
         this.corsOrigins = serverSettings.corsOrigins
         this.androidPushMode = serverSettings.androidPushMode
         this.fcmServiceAccountPath = serverSettings.fcmServiceAccountPath
+        this.vivoPushMode = serverSettings.vivoPushMode
+        this.vivoAppId = serverSettings.vivoAppId
+        this.vivoAppKey = serverSettings.vivoAppKey
+        this.vivoAppSecret = serverSettings.vivoAppSecret
         this.iosPushMode = serverSettings.iosPushMode
         this.iosPushRelayUrl = serverSettings.iosPushRelayUrl
         this.apnsKeyP8Path = serverSettings.apnsKeyP8Path

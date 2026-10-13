@@ -70,7 +70,7 @@ export type StoredPushSubscription = {
     createdAt: number
 }
 
-export type NativeDevicePlatform = 'phone' | 'wear' | 'ios'
+export type NativeDevicePlatform = import('../push-native/platforms').NativePushPlatform
 
 export type StoredFcmDevice = {
     id: number

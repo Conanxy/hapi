@@ -14,6 +14,22 @@ import kotlin.test.assertTrue
  * handling, and the suppress-when-open rule.
  */
 class PushPayloadTest {
+    @Test
+    fun `test pushes open the app without actions or a real session target`() {
+        val payload = PushPayload.parse(mapOf(
+            "type" to "test",
+            "sessionId" to "__hapi_push_test__",
+            "title" to "HAPI",
+            "body" to "Test notification. Open HAPI.",
+            "contractVersion" to "1",
+        ))!!
+        assertTrue(payload.isTest)
+        assertNull(payload.navigationSessionId)
+        assertFalse(payload.supportsActions)
+        assertEquals(PushPayload.CHANNEL_TASK_NOTIFICATIONS, payload.channelId)
+        assertFalse(PushPayload.parse(permissionData())!!.isTest)
+        assertEquals(permissionData()["sessionId"], PushPayload.parse(permissionData())!!.navigationSessionId)
+    }
 
     private fun permissionData(vararg overrides: Pair<String, String>): Map<String, String> {
         val base = mutableMapOf(

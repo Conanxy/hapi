@@ -53,11 +53,18 @@ Dictation and voice-assistant provider keys can also be added from **Settings â†
 - `VAPID_SUBJECT` - Contact email/URL for Web Push.
 - `HAPI_ANDROID_PUSH` - `auto` (default: direct FCM when credentials are configured, otherwise relay), `relay`, `fcm`, or `off`.
 - `FCM_SERVICE_ACCOUNT_PATH` - Service-account JSON for private Firebase builds; the app must use the same project. Invalid configured credentials disable Android push instead of switching projects.
+- `HAPI_VIVO_PUSH` - `off` (default) or `test`. Independent of FCM/iOS; only sends single-device vivo test messages, not production push.
+- `VIVO_APP_ID`, `VIVO_APP_KEY`, `VIVO_APP_SECRET` - Matching vivo application credentials, required in test mode. The secret stays on the hub, never in the APK.
 - `HAPI_IOS_PUSH` - `relay` (default), `apns`, or `off`.
 - `HAPI_PUSH_RELAY_URL` - Shared Android/iOS push relay (default: `https://push.hapi.run`; persisted as `iosPushRelayUrl`). Independent of the `--relay` network tunnel.
 
 Official native apps register their encryption keys automatically; no push
-provider setup is needed on a fresh hub. See the [native companion push
+provider setup is needed on a fresh hub for FCM/APNs. Opt-in vivo builds need
+matching app/hub credentials and device-side consent; see the
+[Android vivo setup](../android/README.md#vivo-test-push).
+Unpublished/restricted apps have a provider limit of 1000 test messages per
+app per day, online-device-only delivery and no offline caching.
+See the [native companion push
 contract](../docs/api/native-companion-contract.md).
 
 ## Running
@@ -179,6 +186,11 @@ for request/response shapes and error semantics, and `src/web/routes/` for all e
 
 Native Android/iOS registration uses `POST`/`DELETE /api/devices/register`
 (`src/web/routes/devices.ts`); see the [native push contract](../docs/api/native-companion-contract.md).
+`GET /api/devices` lists namespace-local push metadata without tokens/keys;
+`POST /api/devices/test` targets one registered device. Web Settings exposes
+Android test sends with a 10-second per-namespace/provider cooldown. Provider
+acceptance is not proof of delivery; iOS tests are not yet supported. See
+the [REST contract](../docs/api/client-contract/rest.md#devices-android--ios-push).
 
 ### CLI (`src/web/routes/cli.ts`)
 
@@ -286,6 +298,8 @@ Maintenance scripts (run with the hub stopped before swapping files):
 - `src/sse/` - Server-Sent Events.
 - `src/config/` - Configuration loading and generation.
 - `src/notifications/` - Push and Telegram notifications.
+- `src/push-native/` - Common native payload/sender types, provider registry, registration platform catalog and Android notification orchestration. Add provider factories here instead of branching in startup/session code.
+- `src/push-vivo/` - Opt-in vivo test adapter and configuration. Generic visible notices, encrypted tap targets; no plaintext session/chat content.
 - `src/visibility/` - Client visibility tracking.
 
 ## Security model

@@ -62,11 +62,15 @@ class DeviceRegistrarTest {
         val gateway = FakeGateway()
         val retries = RecordingRetries()
         var identityUnavailable = false
+        var tokenUnavailable = false
         val scope = CoroutineScope(StandardTestDispatcher(testScope.testScheduler))
         val registrar = DeviceRegistrar(
             registry = registry,
             gateway = gateway,
-            tokenSource = { token },
+            tokenSource = {
+                if (tokenUnavailable) throw IOException("SDK temporarily unavailable")
+                token
+            },
             identities = {
                 if (identityUnavailable) throw IOException("Key storage unavailable")
                 IDENTITY
@@ -88,6 +92,20 @@ class DeviceRegistrarTest {
 
     private val hubA = "https://hub-a.example"
     private val hubB = "https://hub-b.example"
+
+    @Test
+    fun `token acquisition failures retry every hub without killing roster observation`() = test { h ->
+        h.registry.addHub(hubA)
+        h.tokenUnavailable = true
+        h.registrar.start()
+        advanceUntilIdle()
+        assertEquals(listOf(hubA), h.retries.retries)
+        assertTrue(h.gateway.registrations.isEmpty())
+        h.tokenUnavailable = false
+        h.registry.addHub(hubB)
+        advanceUntilIdle()
+        assertEquals(listOf(hubB), h.gateway.registrations.map { it.hubUrl })
+    }
 
     @Test
     fun `identity persistence failures schedule registration retries without sending an unpersisted key`() = test { h ->

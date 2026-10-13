@@ -25,6 +25,37 @@ function createApp(store: Store) {
 }
 
 describe('devices routes', () => {
+    it('requires authentication for listing and testing devices', async () => {
+        const store = new Store(':memory:')
+        try {
+            const app = createApp(store)
+            expect((await app.request('/api/devices')).status).toBe(401)
+            expect((await app.request('/api/devices/test', { method: 'POST' })).status).toBe(401)
+        } finally {
+            store.close()
+        }
+    })
+    it('registers vivo separately, requires encryption and replaces the same install FCM binding', async () => {
+        const store = new Store(':memory:')
+        try {
+            store.fcm.upsertDevice('default', { token: 'fcm', deviceId: 'install', platform: 'phone' })
+            const app = createApp(store)
+            const headers = { ...await authHeaders(), 'content-type': 'application/json' }
+            const device = { token: 'vivo', deviceId: 'install', platform: 'vivo' }
+            expect((await app.request('/api/devices/register', { method: 'POST', headers, body: JSON.stringify(device) })).status).toBe(400)
+            const pushKey = Buffer.alloc(32, 1).toString('base64')
+            expect((await app.request('/api/devices/register', {
+                method: 'POST', headers, body: JSON.stringify({ ...device, pushKey })
+            })).status).toBe(200)
+            expect(store.fcm.getDevicesByNamespace('default', ['phone'])).toHaveLength(0)
+            expect(store.fcm.getDevicesByNamespace('default', ['vivo'])).toHaveLength(1)
+            const unregister = await app.request('/api/devices/register', { method: 'DELETE', headers, body: JSON.stringify({ token: 'vivo' }) })
+            expect(unregister.status).toBe(200)
+            expect(store.fcm.getDevicesByNamespace('default')).toHaveLength(0)
+        } finally {
+            store.close()
+        }
+    })
     it('validates and stores phone keys and replaces the legacy install identity without duplicates', async () => {
         const store = new Store(':memory:')
         store.fcm.upsertDevice('default', { token: 'same-token', platform: 'phone', deviceId: 'old-datastore-id' })

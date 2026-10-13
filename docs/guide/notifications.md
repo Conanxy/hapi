@@ -22,6 +22,34 @@ See the [native push contract](../api/native-companion-contract.md) for settings
 and delivery details. This push relay is independent of the `--relay` network
 tunnel.
 
+### vivo test push
+
+An opt-in Android build can use vivo's system push instead of FCM on supported
+vivo/iQOO phones. The APK needs the matching vivo AppID/AppKey and the Hub
+needs `HAPI_VIVO_PUSH=test` plus `VIVO_APP_ID`, `VIVO_APP_KEY`,
+`VIVO_APP_SECRET`. Keep the secret on the Hub only. See
+[Android setup](../../android/README.md#vivo-test-push).
+This is a test integration, not production push: vivo limits tests to
+1000 messages per application per day, online devices only, with no offline
+cache. Clearing recent apps is not the same as Android force-stop; delivery
+after force-stop is not guaranteed.
+
+### Send a test notification
+
+In the web app, open **Settings → General → Companion → Push devices**.
+Choose **Send test push** beside the registered Android device. You can
+trigger this from a computer while the phone app is in the background.
+Refresh the list after changing the phone's push settings.
+
+The list shows the channel and installation ID, never device tokens or
+encryption keys. A paired app only appears after registering for push.
+Disabled channels cannot be tested; iOS test pushes are not yet supported.
+Tests target one device and have a 10-second cooldown, including failures.
+The acceptance message means the provider accepted the request, not that the
+phone received it. vivo's daily quota and online-only restriction still apply.
+Test notifications contain no session content and open the Android app
+without navigating to a session.
+
 ## Telegram Setup
 
 Enable Telegram notifications and Mini App access:

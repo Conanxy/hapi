@@ -6,9 +6,9 @@ import type { Store } from '../store'
 import type { IosPushNotificationPayload, IosPushService } from './iosPushService'
 
 /**
- * iOS sibling of FcmNotificationChannel. Fires unconditionally (the phone
+ * iOS sibling of NativePushNotificationChannel. Fires unconditionally (the phone
  * is a canonical native surface - no SSE/visibility shortcut, see the
- * rationale in FcmNotificationChannel.deliver) and participates in the same
+ * rationale in NativePushNotificationChannel.deliver) and participates in the same
  * per-dispatch nativeGate: when at least one APNs/relay send succeeds,
  * PushNotificationChannel suppresses web-push for this namespace so the
  * operator gets one OS notification, not two.
