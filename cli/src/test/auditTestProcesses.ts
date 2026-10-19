@@ -22,6 +22,14 @@ export interface TestOwnedProcess {
     command: string
 }
 
+function processTableArgs(): string[] {
+    // Darwin uses `-E` for environments and `-A` for all processes.
+    if (process.platform === 'darwin') {
+        return ['-A', '-E', '-w', '-w', '-o', 'pid=,ppid=,rss=,command=']
+    }
+    return ['eww', '-eo', 'pid=,ppid=,rss=,command=']
+}
+
 /**
  * Scans for live processes whose environment dump contains `marker`.
  * Returns an empty array on platforms without `ps eww` (Windows); THROWS on
@@ -38,11 +46,11 @@ export function findTestOwnedProcesses(marker: string): TestOwnedProcess[] {
 
     let output: string
     try {
-        // `-eo` (not `-axo`): procps-ng 4.x rejects `-x` with "must set
-        // personality" on some Linux builds. `e` shows the environment after
-        // the command; `ww` removes width truncation so the env dump is not
-        // cut off.
-        output = execFileSync('ps', ['eww', '-eo', 'pid=,ppid=,rss=,command='], {
+        // On Linux, `e` shows the environment after the command and `ww`
+        // removes width truncation. Darwin uses the equivalent `-E`/`-w`
+        // flags; keep the argument forms separate because BSD `ps` parses
+        // the Linux `-eo` form differently.
+        output = execFileSync('ps', processTableArgs(), {
             encoding: 'utf8',
             maxBuffer: 64 * 1024 * 1024,
             stdio: ['ignore', 'pipe', 'pipe'],
