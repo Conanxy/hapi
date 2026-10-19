@@ -8,6 +8,7 @@ import type { ApiClient } from '@/api/client'
 import { getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { randomId } from '@/lib/randomId'
+import { prepareImageFileForUpload } from '@/lib/imageCompression'
 
 const MAX_PREVIEW_BYTES = 5 * 1024 * 1024
 
@@ -72,9 +73,9 @@ export function createScratchlistAttachmentAdapter(
         },
 
         async *add({ file }): AsyncGenerator<PendingAttachment> {
-            const contentType = file.type || 'application/octet-stream'
             const restored = getRestoredUploadMetadata(file)
             if (restored?.path) {
+                const contentType = file.type || 'application/octet-stream'
                 const hubAttachment = hubAttachmentFromRestoredDraft(restored.path, file, contentType)
                 if (hubAttachment) {
                     yield {
@@ -94,12 +95,16 @@ export function createScratchlistAttachmentAdapter(
 
             const id = randomId()
 
+            // Compress picked images before the Scratchlist blob is created.
+            const preparedFile = await prepareImageFileForUpload(file)
+            const contentType = preparedFile.type || 'application/octet-stream'
+            const name = preparedFile.name
             yield {
                 id,
                 type: 'file',
-                name: file.name,
+                name,
                 contentType,
-                file,
+                file: preparedFile,
                 status: { type: 'running', reason: 'uploading', progress: 0 }
             }
 
@@ -108,7 +113,7 @@ export function createScratchlistAttachmentAdapter(
                     return
                 }
 
-                const content = await fileToBase64(file)
+                const content = await fileToBase64(preparedFile)
                 if (cancelledAttachmentIds.has(id)) {
                     return
                 }
@@ -116,15 +121,15 @@ export function createScratchlistAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'running', reason: 'uploading', progress: 50 }
                 }
 
                 const result = await api.uploadScratchlistAttachment(
                     sessionId,
-                    file.name,
+                    name,
                     content,
                     contentType
                 )
@@ -139,18 +144,18 @@ export function createScratchlistAttachmentAdapter(
                     yield {
                         id,
                         type: 'file',
-                        name: file.name,
+                        name,
                         contentType,
-                        file,
+                        file: preparedFile,
                         status: { type: 'incomplete', reason: 'error' }
                     }
                     return
                 }
 
                 let previewUrl: string | undefined
-                if (isImageMimeType(contentType) && file.size <= MAX_PREVIEW_BYTES) {
+                if (isImageMimeType(contentType) && preparedFile.size <= MAX_PREVIEW_BYTES) {
                     try {
-                        previewUrl = await fileToDataUrl(file)
+                        previewUrl = await fileToDataUrl(preparedFile)
                     } catch {
                         // Preview generation is optional after the upload has succeeded.
                     }
@@ -164,9 +169,9 @@ export function createScratchlistAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'requires-action', reason: 'composer-send' },
                     path: result.attachment.path,
                     hubAttachment: result.attachment,
@@ -176,9 +181,9 @@ export function createScratchlistAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'incomplete', reason: 'error' }
                 }
             }

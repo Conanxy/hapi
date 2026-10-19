@@ -161,7 +161,10 @@ final class ScratchlistScreenModel {
         }
     }
 
-    func addAttachment(_ item: PhotosPickerItem) {
+    func addAttachment(
+        _ item: PhotosPickerItem,
+        compressionSettings: ImageCompressionSettings = .default
+    ) {
         guard let draft = editor, !draft.isUploading, !draft.isSaving, draft.failedUploadName == nil else { return }
         editor?.isUploading = true
         editor?.error = nil
@@ -171,8 +174,26 @@ final class ScratchlistScreenModel {
                 return
             }
             let type = item.supportedContentTypes.first
-            await importAttachment(data: data, filename: "photo-\(UUID().uuidString).\(type?.preferredFilenameExtension ?? "jpg")",
-                mimeType: type?.preferredMIMEType ?? "image/jpeg", draft: draft)
+            let filename = "photo-\(UUID().uuidString).\(type?.preferredFilenameExtension ?? "jpg")"
+            let mimeType = type?.preferredMIMEType ?? "image/jpeg"
+            switch await AttachmentPreparer.prepare(
+                data: data,
+                filename: filename,
+                mimeType: mimeType,
+                settings: compressionSettings
+            ) {
+            case .ready(let prepared):
+                await importAttachment(
+                    data: prepared.bytes,
+                    filename: prepared.filename,
+                    mimeType: prepared.mimeType,
+                    draft: draft
+                )
+            case .tooLarge(let filename, _):
+                finishImport(id: draft.id, error: String(format: String(localized: "%@ is over the 50 MB upload limit"), filename))
+            case .unreadable(let filename):
+                finishImport(id: draft.id, error: String(format: String(localized: "Couldn't read %@"), filename))
+            }
         }
     }
 

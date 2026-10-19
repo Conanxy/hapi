@@ -1,6 +1,7 @@
 package app.hapi.companion.feature.chat.attachments
 
 import java.util.Base64
+import app.hapi.companion.feature.settings.ImageCompressionSettings
 
 /**
  * Pure sizing/compression policy for composer attachments (B-M3f) — no
@@ -19,13 +20,13 @@ object AttachmentPolicy {
     const val MAX_UPLOAD_BYTES: Long = 50L * 1024 * 1024
 
     /** Images larger than this get downscaled + JPEG-recompressed. */
-    const val IMAGE_COMPRESS_THRESHOLD_BYTES: Long = 4L * 1024 * 1024
+    const val IMAGE_COMPRESS_THRESHOLD_BYTES: Long = 1L * 1024 * 1024
 
     /** Longest edge after downscaling. */
-    const val MAX_IMAGE_DIMENSION: Int = 2048
+    const val MAX_IMAGE_DIMENSION: Int = 2560
 
     /** JPEG quality for recompressed uploads. */
-    const val COMPRESS_JPEG_QUALITY: Int = 85
+    const val COMPRESS_JPEG_QUALITY: Int = 90
 
     /**
      * Longest edge of the thumbnail embedded as `AttachmentMetadata.previewUrl`
@@ -78,16 +79,23 @@ object AttachmentPolicy {
      * original exceeds 50 MB — downscaling brings any camera photo far under
      * the cap (the post-compression size is re-checked by the preparer).
      */
-    fun planFor(mimeType: String, sizeBytes: Long): Plan = when {
-        isRecompressibleImageMime(mimeType) && sizeBytes > IMAGE_COMPRESS_THRESHOLD_BYTES ->
+    fun planFor(
+        mimeType: String,
+        sizeBytes: Long,
+        settings: ImageCompressionSettings = ImageCompressionSettings.DEFAULT,
+    ): Plan = when {
+        settings.enabled && isRecompressibleImageMime(mimeType) && sizeBytes > settings.thresholdBytes ->
             Plan.CompressImage
         sizeBytes > MAX_UPLOAD_BYTES -> Plan.Reject
         else -> Plan.KeepOriginal
     }
 
     /** How many bytes to read at most before giving up on a pick as too large. */
-    fun readCapFor(mimeType: String): Long =
-        if (isRecompressibleImageMime(mimeType)) MAX_IMAGE_SOURCE_BYTES else MAX_UPLOAD_BYTES
+    fun readCapFor(
+        mimeType: String,
+        settings: ImageCompressionSettings = ImageCompressionSettings.DEFAULT,
+    ): Long =
+        if (settings.enabled && isRecompressibleImageMime(mimeType)) MAX_IMAGE_SOURCE_BYTES else MAX_UPLOAD_BYTES
 
     fun isImageMime(mimeType: String): Boolean = mimeType.startsWith("image/")
 

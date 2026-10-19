@@ -4,7 +4,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.OpenableColumns
+import app.hapi.companion.feature.chat.attachments.AttachmentPreparer
+import app.hapi.companion.feature.chat.attachments.PrepareResult
+import app.hapi.companion.feature.settings.ImageCompressionSettings
 import app.hapi.data.store.ScratchlistAttachmentGuard
 import app.hapi.protocol.wire.ScratchlistAttachment
 import app.hapi.protocol.wire.ScratchlistAttachmentLimits
@@ -21,6 +23,9 @@ import kotlinx.coroutines.withContext
  */
 class ContentResolverAttachmentImporter(
     private val context: Context,
+    private val imageCompressionSettings: () -> ImageCompressionSettings = {
+        ImageCompressionSettings.DEFAULT
+    },
 ) : ScratchlistAttachmentImporter {
 
     override suspend fun import(
@@ -28,15 +33,26 @@ class ContentResolverAttachmentImporter(
         limits: ScratchlistAttachmentLimits,
         existing: List<ScratchlistAttachment>,
     ): ScratchlistImportOutcome = withContext(Dispatchers.IO) {
-        val resolver = context.contentResolver
-        val mimeType = resolver.getType(uri) ?: "application/octet-stream"
-        val bytes = try {
-            resolver.openInputStream(uri)?.use { it.readBytes() }
-        } catch (_: Exception) {
-            null
-        } ?: return@withContext ScratchlistImportOutcome.Rejected(ScratchlistImportRejection.Unreadable)
-
-        val filename = displayNameOf(uri) ?: fallbackName(mimeType)
+        val prepared = when (
+            val result = AttachmentPreparer(
+                context = context,
+                imageCompressionSettings = imageCompressionSettings(),
+                ioDispatcher = Dispatchers.IO,
+            ).prepare(uri)
+        ) {
+            is PrepareResult.Ready -> result.attachment
+            is PrepareResult.TooLarge ->
+                return@withContext ScratchlistImportOutcome.Rejected(
+                    ScratchlistImportRejection.FileTooLarge(50),
+                )
+            is PrepareResult.Unreadable ->
+                return@withContext ScratchlistImportOutcome.Rejected(
+                    ScratchlistImportRejection.Unreadable,
+                )
+        }
+        val bytes = prepared.bytes
+        val filename = prepared.filename
+        val mimeType = prepared.mimeType
 
         when (val verdict = ScratchlistAttachmentGuard.evaluate(bytes.size.toLong(), mimeType, existing, limits)) {
             ScratchlistAttachmentGuard.Verdict.Fits ->
@@ -58,26 +74,11 @@ class ContentResolverAttachmentImporter(
         }
     }
 
-    private fun displayNameOf(uri: Uri): String? = try {
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { cursor ->
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
-            }
-    } catch (_: Exception) {
-        null
-    }?.takeIf { it.isNotBlank() }
-
     private companion object {
         /** Decode budget before quality stepping (≈ 4K-screen worth of pixels). */
         const val MAX_DECODE_PIXELS = 2048 * 2048
         const val MIN_DIMENSION = 64
         val QUALITY_STEPS = intArrayOf(90, 80, 70, 60, 50)
-
-        fun fallbackName(mimeType: String): String = when {
-            mimeType.startsWith("image/") -> "photo-${System.currentTimeMillis()}.${mimeType.substringAfter('/')}"
-            else -> "attachment-${System.currentTimeMillis()}"
-        }
 
         fun jpegName(original: String): String =
             original.substringBeforeLast('.', original).ifBlank { "photo" } + ".jpg"

@@ -12,21 +12,32 @@ struct AttachmentPolicyTests {
     // MARK: - plan(forMimeType:sizeBytes:)
 
     @Test func smallFilesOfAnyTypeKeepTheirOriginalBytes() {
-        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 3 * mb) == .keepOriginal)
+        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 512 * 1024) == .keepOriginal)
         #expect(AttachmentPolicy.plan(forMimeType: "application/pdf", sizeBytes: 20 * mb) == .keepOriginal)
         #expect(AttachmentPolicy.plan(forMimeType: "text/plain", sizeBytes: 10) == .keepOriginal)
     }
 
-    @Test func imagesOverThe4MBThresholdAreCompressed() {
+    @Test func imagesOverThe1MBThresholdAreCompressed() {
         #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 5 * mb) == .compressImage)
         #expect(AttachmentPolicy.plan(forMimeType: "image/png", sizeBytes: 12 * mb) == .compressImage)
-        #expect(AttachmentPolicy.plan(forMimeType: "image/webp", sizeBytes: 4 * mb + 1) == .compressImage)
+        #expect(AttachmentPolicy.plan(forMimeType: "image/webp", sizeBytes: 1 * mb + 1) == .compressImage)
         // Case-insensitive mime match.
         #expect(AttachmentPolicy.plan(forMimeType: "image/JPEG", sizeBytes: 5 * mb) == .compressImage)
     }
 
     @Test func imagesAtExactlyTheThresholdStayOriginal() {
-        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 4 * mb) == .keepOriginal)
+        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 1 * mb) == .keepOriginal)
+    }
+
+    @Test func disabledCompressionKeepsImagesUntilTheWireLimit() {
+        let settings = ImageCompressionSettings(
+            enabled: false,
+            thresholdBytes: 512 * 1024,
+            maxDimension: 1280,
+            jpegQuality: 0.70
+        )
+        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 2 * mb, settings: settings) == .keepOriginal)
+        #expect(AttachmentPolicy.plan(forMimeType: "image/jpeg", sizeBytes: 51 * mb, settings: settings) == .reject)
     }
 
     @Test func oversizedRecompressibleImagesAreStillCompressedNotRejected() {
@@ -60,12 +71,12 @@ struct AttachmentPolicyTests {
     // MARK: - Scaling
 
     @Test func scaledDimensionsClampsTheLongestEdgeAndPreservesAspect() {
-        #expect(AttachmentPolicy.scaledDimensions(width: 4096, height: 3072, maxDimension: 2048) == (2048, 1536))
-        #expect(AttachmentPolicy.scaledDimensions(width: 2048, height: 4096, maxDimension: 2048) == (1024, 2048))
+        #expect(AttachmentPolicy.scaledDimensions(width: 4096, height: 3072, maxDimension: 2560) == (2560, 1920))
+        #expect(AttachmentPolicy.scaledDimensions(width: 2048, height: 4096, maxDimension: 2560) == (1280, 2560))
         // Under the cap: untouched.
         #expect(AttachmentPolicy.scaledDimensions(width: 640, height: 480, maxDimension: 2048) == (640, 480))
         // Degenerate aspect never collapses to zero.
-        #expect(AttachmentPolicy.scaledDimensions(width: 100_000, height: 10, maxDimension: 2048) == (2048, 1))
+        #expect(AttachmentPolicy.scaledDimensions(width: 100_000, height: 10, maxDimension: 2560) == (2560, 1))
     }
 
     // MARK: - Filenames

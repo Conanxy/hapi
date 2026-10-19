@@ -38,6 +38,7 @@ sealed interface HubInfoState {
 class SettingsViewModel(
     private val themePrefs: ThemePrefs,
     private val languagePrefs: LanguagePrefs,
+    private val imageCompressionPrefs: ImageCompressionPrefs,
     /** Active hub origin, shown in About. */
     val hubUrl: String,
     /** Current JWT for the active hub (blocking-safe: called on a worker). */
@@ -51,6 +52,9 @@ class SettingsViewModel(
 
     val language: StateFlow<AppLanguage> = languagePrefs.language
         .stateIn(scope, SharingStarted.Eagerly, AppLanguage.SYSTEM)
+
+    val imageCompression: StateFlow<ImageCompressionSettings> = imageCompressionPrefs.settings
+        .stateIn(scope, SharingStarted.Eagerly, ImageCompressionSettings.DEFAULT)
 
     private val mutableIsOwner = MutableStateFlow(false)
 
@@ -76,6 +80,22 @@ class SettingsViewModel(
 
     fun setLanguage(language: AppLanguage) {
         scope.launch { languagePrefs.setLanguage(language) }
+    }
+
+    fun setImageCompressionEnabled(enabled: Boolean) {
+        scope.launch { imageCompressionPrefs.setEnabled(enabled) }
+    }
+
+    fun setImageCompressionThreshold(thresholdBytes: Long) {
+        scope.launch { imageCompressionPrefs.setThresholdBytes(thresholdBytes) }
+    }
+
+    fun setImageCompressionDimension(maxDimension: Int) {
+        scope.launch { imageCompressionPrefs.setMaxDimension(maxDimension) }
+    }
+
+    fun setImageCompressionQuality(jpegQuality: Int) {
+        scope.launch { imageCompressionPrefs.setJpegQuality(jpegQuality) }
     }
 
     fun retryHubInfo() {

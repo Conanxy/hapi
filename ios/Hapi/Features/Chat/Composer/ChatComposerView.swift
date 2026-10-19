@@ -14,6 +14,7 @@ import UniformTypeIdentifiers
 /// also hosts dictation and attachment controls.
 struct ChatComposerView: View {
     @Environment(\.hapiTypography) private var typography
+    @Environment(ImageCompressionPrefs.self) private var imageCompressionPrefs
     let interactor: ChatInteractor
     /// nil ⇒ dictation unavailable (no controller wired) — mic button hidden.
     var dictation: DictationController?
@@ -143,7 +144,8 @@ struct ChatComposerView: View {
                     await handle(AttachmentPreparer.prepare(
                         data: jpeg,
                         filename: AttachmentPreparer.cameraFilename(),
-                        mimeType: "image/jpeg"
+                        mimeType: "image/jpeg",
+                        settings: imageCompressionPrefs.settings
                     ))
                 }
             }
@@ -157,7 +159,7 @@ struct ChatComposerView: View {
             guard case .success(let urls) = outcome else { return }
             Task {
                 for url in urls {
-                    await handle(AttachmentPreparer.prepare(fileURL: url))
+                    await handle(AttachmentPreparer.prepare(fileURL: url, settings: imageCompressionPrefs.settings))
                 }
             }
         }
@@ -187,7 +189,8 @@ struct ChatComposerView: View {
         await handle(AttachmentPreparer.prepare(
             data: data,
             filename: naming.filename,
-            mimeType: naming.mimeType
+            mimeType: naming.mimeType,
+            settings: imageCompressionPrefs.settings
         ))
     }
 

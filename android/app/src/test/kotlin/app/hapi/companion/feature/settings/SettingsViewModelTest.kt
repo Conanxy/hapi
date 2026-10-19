@@ -72,6 +72,7 @@ class SettingsViewModelTest {
             val viewModel = SettingsViewModel(
                 themePrefs = ThemePrefs(dataStore),
                 languagePrefs = LanguagePrefs(dataStore),
+                imageCompressionPrefs = ImageCompressionPrefs(dataStore),
                 hubUrl = "https://hub.example",
                 currentJwt = { jwt },
                 fetchHealth = health,

@@ -12,6 +12,7 @@ struct ScratchlistView: View {
     private let initialEntry: ScratchlistEntry?
     private let initiallyEditing: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(ImageCompressionPrefs.self) private var imageCompressionPrefs
     @State private var query = ""
     @State private var path: [String] = []
     @State private var viewerAttachment: ScratchlistAttachment?
@@ -364,6 +365,7 @@ private struct ScratchlistEditorView: View {
     let attachments: ScratchlistAttachmentLoader
     let onOpenAttachment: (ScratchlistAttachment) -> Void
     @Environment(\.hapiTypography) private var typography
+    @Environment(ImageCompressionPrefs.self) private var imageCompressionPrefs
     @State private var pickedItem: PhotosPickerItem?
     @State private var photosPickerOpen = false
     @State private var filePickerOpen = false
@@ -419,13 +421,16 @@ private struct ScratchlistEditorView: View {
         .onChange(of: pickedItem) {
             guard let item = pickedItem else { return }
             pickedItem = nil
-            model.addAttachment(item)
+            model.addAttachment(item, compressionSettings: imageCompressionPrefs.settings)
         }
         .fileImporter(isPresented: $filePickerOpen, allowedContentTypes: [.item]) { result in
             guard case .success(let url) = result else { return }
             let editorId = model.editor?.id
             Task {
-                let prepared = await AttachmentPreparer.prepare(fileURL: url)
+                let prepared = await AttachmentPreparer.prepare(
+                    fileURL: url,
+                    settings: imageCompressionPrefs.settings
+                )
                 guard model.editor?.id == editorId else { return }
                 switch prepared {
                 case .ready(let prepared):

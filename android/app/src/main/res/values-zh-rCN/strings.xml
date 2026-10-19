@@ -144,6 +144,12 @@
     <string name="settings_dynamic_color_oled_note">在 OLED 纯黑下不可用。</string>
 
     <string name="settings_section_language">语言</string>
+    <string name="settings_section_image_uploads">图片上传</string>
+    <string name="settings_image_compression_enabled">上传前压缩图片</string>
+    <string name="settings_image_compression_enabled_description">仅处理超过阈值的所选图片，并缩放为 JPEG。</string>
+    <string name="settings_image_compression_threshold">压缩大于此大小的图片</string>
+    <string name="settings_image_compression_dimension">图片最长边</string>
+    <string name="settings_image_compression_quality">JPEG 质量</string>
     <string name="settings_language">应用语言</string>
     <string name="settings_language_system">跟随系统</string>
 

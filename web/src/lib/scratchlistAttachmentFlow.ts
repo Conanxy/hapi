@@ -6,6 +6,7 @@ import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { hubAttachmentFromRestoredDraft } from '@/lib/scratchlistAttachmentAdapter'
+import { markFileAsUploadReady, prepareImageFileForUpload } from '@/lib/imageCompression'
 
 async function blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -103,10 +104,10 @@ export async function prepareScratchlistParkAttachments(
     const createdHubIds: string[] = []
     try {
         for (const chip of pending) {
-            const contentType = chip.contentType || chip.file?.type || 'application/octet-stream'
+            const originalContentType = chip.contentType || chip.file?.type || 'application/octet-stream'
             const hubAttachment = chip.hubAttachment
                 ?? (chip.path && chip.file
-                    ? hubAttachmentFromRestoredDraft(chip.path, chip.file, contentType)
+                    ? hubAttachmentFromRestoredDraft(chip.path, chip.file, originalContentType)
                     : null)
             if (hubAttachment) {
                 prepared.push({
@@ -115,14 +116,16 @@ export async function prepareScratchlistParkAttachments(
                 })
                 continue
             }
-            const file = chip.file
-            if (!file) {
+            const sourceFile = chip.file
+            if (!sourceFile) {
                 throw new Error(`Cannot park attachment ${chip.name} without file bytes`)
             }
+            const file = await prepareImageFileForUpload(sourceFile)
+            const contentType = file.type || chip.contentType || 'application/octet-stream'
             const content = await blobToBase64(file)
             const result = await api.uploadScratchlistAttachment(
                 sessionId,
-                chip.name,
+                file.name,
                 content,
                 contentType,
             )
@@ -245,7 +248,7 @@ export async function rehydrateScratchlistAttachmentsToComposer(
 ): Promise<void> {
     for (const attachment of attachments) {
         const blob = await api.fetchScratchlistAttachmentBlob(sessionId, attachment.id)
-        const file = new File([blob], attachment.filename, { type: attachment.mimeType })
+        const file = markFileAsUploadReady(new File([blob], attachment.filename, { type: attachment.mimeType }))
         await composer.addAttachment(file)
     }
 }

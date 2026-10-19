@@ -15,23 +15,35 @@ class AttachmentPolicyTest {
 
     @Test
     fun `small files of any type keep their original bytes`() {
-        assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("image/jpeg", 3 * MB))
+        assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("image/jpeg", 512 * 1024))
         assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("application/pdf", 20 * MB))
         assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("text/plain", 10))
     }
 
     @Test
-    fun `images over the 4MB threshold are compressed`() {
+    fun `images over the 1MB threshold are compressed`() {
         assertEquals(Plan.CompressImage, AttachmentPolicy.planFor("image/jpeg", 5 * MB))
         assertEquals(Plan.CompressImage, AttachmentPolicy.planFor("image/png", 12 * MB))
-        assertEquals(Plan.CompressImage, AttachmentPolicy.planFor("image/webp", 4 * MB + 1))
+        assertEquals(Plan.CompressImage, AttachmentPolicy.planFor("image/webp", 1 * MB + 1))
         // Case-insensitive mime match.
         assertEquals(Plan.CompressImage, AttachmentPolicy.planFor("image/JPEG", 5 * MB))
     }
 
     @Test
     fun `images at exactly the threshold stay original`() {
-        assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("image/jpeg", 4 * MB))
+        assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("image/jpeg", 1 * MB))
+    }
+
+    @Test
+    fun `disabled compression keeps images until the wire limit`() {
+        val settings = app.hapi.companion.feature.settings.ImageCompressionSettings(
+            enabled = false,
+            thresholdBytes = 512 * 1024,
+            maxDimension = 1280,
+            jpegQuality = 70,
+        )
+        assertEquals(Plan.KeepOriginal, AttachmentPolicy.planFor("image/jpeg", 2 * MB, settings))
+        assertEquals(Plan.Reject, AttachmentPolicy.planFor("image/jpeg", 51 * MB, settings))
     }
 
     @Test
@@ -81,12 +93,12 @@ class AttachmentPolicyTest {
 
     @Test
     fun `scaledDimensions clamps the longest edge and preserves aspect`() {
-        assertEquals(2048 to 1536, AttachmentPolicy.scaledDimensions(4096, 3072, 2048))
-        assertEquals(1024 to 2048, AttachmentPolicy.scaledDimensions(2048, 4096, 2048))
+        assertEquals(2560 to 1920, AttachmentPolicy.scaledDimensions(4096, 3072, 2560))
+        assertEquals(1280 to 2560, AttachmentPolicy.scaledDimensions(2048, 4096, 2560))
         // Under the cap: untouched.
         assertEquals(640 to 480, AttachmentPolicy.scaledDimensions(640, 480, 2048))
         // Degenerate aspect never collapses to zero.
-        assertEquals(2048 to 1, AttachmentPolicy.scaledDimensions(100_000, 10, 2048))
+        assertEquals(2560 to 1, AttachmentPolicy.scaledDimensions(100_000, 10, 2560))
     }
 
     // ---------------------------------------------------------- filenames --

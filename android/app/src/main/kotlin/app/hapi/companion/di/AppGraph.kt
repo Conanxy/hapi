@@ -8,6 +8,8 @@ import app.hapi.companion.feature.newsession.NewSessionPrefs
 import app.hapi.companion.feature.pairing.PairingClient
 import app.hapi.companion.feature.pairing.PairingClientFactory
 import app.hapi.companion.feature.settings.AppLanguage
+import app.hapi.companion.feature.settings.ImageCompressionPrefs
+import app.hapi.companion.feature.settings.ImageCompressionSettings
 import app.hapi.companion.feature.settings.LanguagePrefs
 import app.hapi.companion.feature.settings.ThemePrefs
 import app.hapi.data.push.EncryptedPrefsPushIdentityStore
@@ -100,6 +102,13 @@ class AppGraph(context: Context) {
 
     /** Language choice (B-M5a: applied via per-app locales; Settings writes it). */
     val languagePrefs: LanguagePrefs = LanguagePrefs(appContext.hapiDataStore)
+
+    /** Image upload compression choice, stored on this device only. */
+    val imageCompressionPrefs: ImageCompressionPrefs = ImageCompressionPrefs(appContext.hapiDataStore)
+
+    /** Eagerly cached settings for non-composable upload/import entry points. */
+    val imageCompressionSettings: StateFlow<ImageCompressionSettings> = imageCompressionPrefs.settings
+        .stateIn(scope, SharingStarted.Eagerly, ImageCompressionSettings.DEFAULT)
 
     /**
      * Eagerly-cached language for non-composable surfaces (B-M5a): FCM

@@ -16,6 +16,12 @@ import {
 import { SettingsChoiceGroup, SettingsFieldLabel, SettingsPageContent, SettingsSection, SettingsSwitch } from '@/components/settings/SettingsPrimitives'
 import { ComposerToolbarLayoutControl } from '@/components/settings/ComposerToolbarLayoutControl'
 import { TextContextThresholdSettings } from '@/components/settings/TextContextThresholdSettings'
+import {
+    IMAGE_COMPRESSION_DIMENSION_OPTIONS,
+    IMAGE_COMPRESSION_QUALITY_OPTIONS,
+    IMAGE_COMPRESSION_THRESHOLD_OPTIONS,
+} from '@/lib/imageCompression'
+import { useImageCompressionSettings } from '@/hooks/useImageCompressionSettings'
 
 function ChatSurfaceColorControl(props: {
     label: string
@@ -55,6 +61,7 @@ export default function SettingsChatPage() {
     const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
     const { codexExplorationCollapsed, setCodexExplorationCollapsed } = useCodexExplorationCollapse()
     const { reasoningCollapsed, setReasoningCollapsed } = useReasoningCollapse()
+    const { settings: imageCompression, setSettings: setImageCompression } = useImageCompressionSettings()
     const { toolGroupBackground, userMessageBackground, setToolGroupBackground, setUserMessageBackground } = useChatSurfaceColors()
     return (
         <SettingsPageContent description={t('settings.chat.description')}>
@@ -76,6 +83,42 @@ export default function SettingsChatPage() {
                 />
                 <ComposerToolbarLayoutControl />
                 <TextContextThresholdSettings />
+            </SettingsSection>
+            <SettingsSection title={t('settings.chat.imageCompression.title')} description={t('settings.chat.imageCompression.description')}>
+                <SettingsSwitch
+                    label={t('settings.chat.imageCompression.enabled')}
+                    description={t('settings.chat.imageCompression.enabled.desc')}
+                    checked={imageCompression.enabled}
+                    onChange={(enabled) => setImageCompression({ ...imageCompression, enabled })}
+                />
+                <SettingsChoiceGroup
+                    label={t('settings.chat.imageCompression.threshold')}
+                    value={imageCompression.thresholdBytes}
+                    options={IMAGE_COMPRESSION_THRESHOLD_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                    }))}
+                    onChange={(thresholdBytes) => setImageCompression({ ...imageCompression, thresholdBytes })}
+                />
+                <SettingsChoiceGroup
+                    label={t('settings.chat.imageCompression.dimension')}
+                    value={imageCompression.maxDimension}
+                    options={IMAGE_COMPRESSION_DIMENSION_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                    }))}
+                    onChange={(maxDimension) => setImageCompression({ ...imageCompression, maxDimension })}
+                />
+                <SettingsChoiceGroup
+                    label={t('settings.chat.imageCompression.quality')}
+                    value={imageCompression.jpegQuality}
+                    options={IMAGE_COMPRESSION_QUALITY_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                    }))}
+                    onChange={(jpegQuality) => setImageCompression({ ...imageCompression, jpegQuality })}
+                    columns={5}
+                />
             </SettingsSection>
             <SettingsSection title={t('settings.chat.tools')}>
                 <SettingsChoiceGroup

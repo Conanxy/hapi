@@ -16,14 +16,14 @@ public enum AttachmentPolicy {
     /// Hub upload ceiling (decoded bytes) — `MAX_UPLOAD_BYTES` on the web.
     public static let maxUploadBytes = 50 * 1024 * 1024
 
-    /// Images larger than this get downscaled + JPEG-recompressed.
-    public static let imageCompressThresholdBytes = 4 * 1024 * 1024
+    /// Default image size above which picked images are recompressed.
+    public static let imageCompressThresholdBytes = ImageCompressionSettings.default.thresholdBytes
 
-    /// Longest edge after downscaling.
-    public static let maxImageDimension = 2048
+    /// Default longest edge after downscaling.
+    public static let maxImageDimension = ImageCompressionSettings.default.maxDimension
 
-    /// JPEG quality for recompressed uploads (Android: 85/100).
-    public static let compressJPEGQuality = 0.85
+    /// Default JPEG quality for recompressed uploads.
+    public static let compressJPEGQuality = ImageCompressionSettings.default.jpegQuality
 
     /// Longest edge of the thumbnail embedded as `AttachmentMetadata.previewUrl`
     /// (a JPEG data URL). The web embeds the full original (≤ 5 MB) there; a
@@ -68,8 +68,14 @@ public enum AttachmentPolicy {
     /// Recompressible images over the threshold are compressed even when the
     /// original exceeds 50 MB — downscaling brings any camera photo far under
     /// the cap (the post-compression size is re-checked by the preparer).
-    public static func plan(forMimeType mimeType: String, sizeBytes: Int) -> Plan {
-        if isRecompressibleImageMime(mimeType), sizeBytes > imageCompressThresholdBytes {
+    public static func plan(
+        forMimeType mimeType: String,
+        sizeBytes: Int,
+        settings: ImageCompressionSettings = .default
+    ) -> Plan {
+        if settings.enabled,
+           isRecompressibleImageMime(mimeType),
+           sizeBytes > settings.thresholdBytes {
             return .compressImage
         }
         if sizeBytes > maxUploadBytes {
@@ -79,8 +85,13 @@ public enum AttachmentPolicy {
     }
 
     /// How many bytes to read at most before giving up on a pick as too large.
-    public static func readCap(forMimeType mimeType: String) -> Int {
-        isRecompressibleImageMime(mimeType) ? maxImageSourceBytes : maxUploadBytes
+    public static func readCap(
+        forMimeType mimeType: String,
+        settings: ImageCompressionSettings = .default
+    ) -> Int {
+        settings.enabled && isRecompressibleImageMime(mimeType)
+            ? maxImageSourceBytes
+            : maxUploadBytes
     }
 
     public static func isImageMime(_ mimeType: String) -> Bool {

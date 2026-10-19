@@ -36,13 +36,21 @@ enum AttachmentPreparer {
 
     /// In-memory bytes (photo picker loads, camera captures): apply the
     /// policy and build the prepared attachment.
-    static func prepare(data: Data, filename: String, mimeType: String) async -> PrepareResult {
-        prepareBytes(filename: filename, mimeType: mimeType, original: data)
+    static func prepare(
+        data: Data,
+        filename: String,
+        mimeType: String,
+        settings: ImageCompressionSettings = .default
+    ) async -> PrepareResult {
+        prepareBytes(filename: filename, mimeType: mimeType, original: data, settings: settings)
     }
 
     /// One `fileImporter` pick. The URL is security-scoped; the read happens
     /// behind a cap so a surprise multi-GB pick cannot exhaust memory.
-    static func prepare(fileURL: URL) async -> PrepareResult {
+    static func prepare(
+        fileURL: URL,
+        settings: ImageCompressionSettings = .default
+    ) async -> PrepareResult {
         let filename = fileURL.lastPathComponent
         let mimeType = mimeType(forFilename: filename)
 
@@ -54,18 +62,18 @@ enum AttachmentPreparer {
         // Reject before reading when the filesystem already says it's hopeless.
         let statedSize = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
         if let statedSize,
-           AttachmentPolicy.plan(forMimeType: mimeType, sizeBytes: statedSize) == .reject {
+           AttachmentPolicy.plan(forMimeType: mimeType, sizeBytes: statedSize, settings: settings) == .reject {
             return .tooLarge(filename: filename, sizeBytes: statedSize)
         }
 
-        let cap = AttachmentPolicy.readCap(forMimeType: mimeType)
+        let cap = AttachmentPolicy.readCap(forMimeType: mimeType, settings: settings)
         guard let read = readUpTo(cap: cap, url: fileURL) else {
             return .unreadable(filename: filename)
         }
         if read.overflowed {
             return .tooLarge(filename: filename, sizeBytes: statedSize ?? cap)
         }
-        return prepareBytes(filename: filename, mimeType: mimeType, original: read.bytes)
+        return prepareBytes(filename: filename, mimeType: mimeType, original: read.bytes, settings: settings)
     }
 
     // MARK: - Naming helpers (used by the picker UI)
@@ -132,8 +140,13 @@ enum AttachmentPreparer {
     // MARK: - Policy application
 
     /// Policy application over in-memory bytes (shared by every pick source).
-    private static func prepareBytes(filename: String, mimeType: String, original: Data) -> PrepareResult {
-        switch AttachmentPolicy.plan(forMimeType: mimeType, sizeBytes: original.count) {
+    private static func prepareBytes(
+        filename: String,
+        mimeType: String,
+        original: Data,
+        settings: ImageCompressionSettings
+    ) -> PrepareResult {
+        switch AttachmentPolicy.plan(forMimeType: mimeType, sizeBytes: original.count, settings: settings) {
         case .reject:
             return .tooLarge(filename: filename, sizeBytes: original.count)
 
@@ -146,7 +159,7 @@ enum AttachmentPreparer {
             ))
 
         case .compressImage:
-            if let compressed = recompress(original) {
+            if let compressed = recompress(original, settings: settings) {
                 return .ready(PreparedAttachment(
                     filename: AttachmentPolicy.compressedFilename(filename),
                     mimeType: "image/jpeg",
@@ -170,11 +183,14 @@ enum AttachmentPreparer {
 
     /// Downscale to ≤ `maxImageDimension` px JPEG, or nil when undecodable /
     /// still too big.
-    private static func recompress(_ original: Data) -> Data? {
+    private static func recompress(
+        _ original: Data,
+        settings: ImageCompressionSettings
+    ) -> Data? {
         guard let encoded = encodeScaledJPEG(
             original,
-            maxDimension: AttachmentPolicy.maxImageDimension,
-            quality: AttachmentPolicy.compressJPEGQuality
+            maxDimension: settings.maxDimension,
+            quality: settings.jpegQuality
         ) else {
             return nil
         }

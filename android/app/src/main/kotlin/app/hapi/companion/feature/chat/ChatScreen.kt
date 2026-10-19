@@ -62,11 +62,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import app.hapi.companion.R
+import app.hapi.companion.di.LocalAppGraph
 import app.hapi.companion.feature.chat.composer.DictationErrorKind
 import app.hapi.companion.feature.chat.attachments.AttachmentPickerSheet
 import app.hapi.companion.feature.chat.attachments.AttachmentPreparer
 import app.hapi.companion.feature.chat.attachments.CameraCapture
 import app.hapi.companion.feature.chat.attachments.PrepareResult
+import app.hapi.companion.feature.settings.ImageCompressionSettings
 import app.hapi.companion.feature.chat.composer.ChatComposer
 import app.hapi.companion.feature.chat.composer.DictationController
 import app.hapi.companion.feature.chat.composer.DictationEvent
@@ -186,7 +188,13 @@ internal fun ChatScreen(
     // --------------------------------------------------------- attachments --
     val attachmentItems by viewModel.attachments.items.collectAsState()
     var attachmentSheetOpen by remember { mutableStateOf(false) }
-    val preparer = remember { AttachmentPreparer(context) }
+    val graph = LocalAppGraph.current
+    val imageCompressionSettings by graph.imageCompressionSettings.collectAsState(
+        initial = ImageCompressionSettings.DEFAULT,
+    )
+    val preparer = remember(context, imageCompressionSettings) {
+        AttachmentPreparer(context, imageCompressionSettings)
+    }
 
     /** Read + policy-apply one pick, then hand it to the upload tray. */
     suspend fun ingestUri(uri: Uri) {

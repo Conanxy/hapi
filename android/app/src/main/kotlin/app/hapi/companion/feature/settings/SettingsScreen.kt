@@ -59,11 +59,15 @@ fun SettingsScreen(
 ) {
     val theme by viewModel.themeSettings.collectAsState()
     val language by viewModel.language.collectAsState()
+    val imageCompression by viewModel.imageCompression.collectAsState()
     val isOwner by viewModel.isOwner.collectAsState()
     val hubInfo by viewModel.hubInfo.collectAsState()
 
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
+    var showImageThresholdDialog by rememberSaveable { mutableStateOf(false) }
+    var showImageDimensionDialog by rememberSaveable { mutableStateOf(false) }
+    var showImageQualityDialog by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -114,6 +118,46 @@ fun SettingsScreen(
                     label = stringResource(R.string.settings_language),
                     value = languageLabel(language),
                     onClick = { showLanguageDialog = true },
+                )
+            }
+
+            SettingsSection(title = stringResource(R.string.settings_section_image_uploads)) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_image_compression_enabled),
+                    description = stringResource(R.string.settings_image_compression_enabled_description),
+                    checked = imageCompression.enabled,
+                    enabled = true,
+                    onCheckedChange = viewModel::setImageCompressionEnabled,
+                )
+                SettingsDivider()
+                SettingsRow(
+                    label = stringResource(R.string.settings_image_compression_threshold),
+                    value = imageThresholdLabel(imageCompression.thresholdBytes),
+                    onClick = if (imageCompression.enabled) {
+                        { showImageThresholdDialog = true }
+                    } else {
+                        null
+                    },
+                )
+                SettingsDivider()
+                SettingsRow(
+                    label = stringResource(R.string.settings_image_compression_dimension),
+                    value = "${imageCompression.maxDimension} px",
+                    onClick = if (imageCompression.enabled) {
+                        { showImageDimensionDialog = true }
+                    } else {
+                        null
+                    },
+                )
+                SettingsDivider()
+                SettingsRow(
+                    label = stringResource(R.string.settings_image_compression_quality),
+                    value = imageCompression.jpegQuality.toString(),
+                    onClick = if (imageCompression.enabled) {
+                        { showImageQualityDialog = true }
+                    } else {
+                        null
+                    },
                 )
             }
 
@@ -192,6 +236,48 @@ fun SettingsScreen(
                 )
             },
             onDismiss = { showLanguageDialog = false },
+        )
+    }
+
+    if (showImageThresholdDialog) {
+        LongChoiceDialog(
+            title = stringResource(R.string.settings_image_compression_threshold),
+            selected = imageCompression.thresholdBytes,
+            options = ImageCompressionSettings.THRESHOLD_OPTIONS,
+            label = ::imageThresholdLabel,
+            onSelect = {
+                showImageThresholdDialog = false
+                viewModel.setImageCompressionThreshold(it)
+            },
+            onDismiss = { showImageThresholdDialog = false },
+        )
+    }
+
+    if (showImageDimensionDialog) {
+        IntChoiceDialog(
+            title = stringResource(R.string.settings_image_compression_dimension),
+            selected = imageCompression.maxDimension,
+            options = ImageCompressionSettings.DIMENSION_OPTIONS,
+            label = { "$it px" },
+            onSelect = {
+                showImageDimensionDialog = false
+                viewModel.setImageCompressionDimension(it)
+            },
+            onDismiss = { showImageDimensionDialog = false },
+        )
+    }
+
+    if (showImageQualityDialog) {
+        IntChoiceDialog(
+            title = stringResource(R.string.settings_image_compression_quality),
+            selected = imageCompression.jpegQuality,
+            options = ImageCompressionSettings.QUALITY_OPTIONS,
+            label = { it.toString() },
+            onSelect = {
+                showImageQualityDialog = false
+                viewModel.setImageCompressionQuality(it)
+            },
+            onDismiss = { showImageQualityDialog = false },
         )
     }
 }
@@ -346,6 +432,64 @@ private fun LanguageDialog(
 }
 
 @Composable
+private fun LongChoiceDialog(
+    title: String,
+    selected: Long,
+    options: List<Long>,
+    label: (Long) -> String,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    RadioRow(
+                        label = label(option),
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun IntChoiceDialog(
+    title: String,
+    selected: Int,
+    options: List<Int>,
+    label: (Int) -> String,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                options.forEach { option ->
+                    RadioRow(
+                        label = label(option),
+                        selected = option == selected,
+                        onClick = { onSelect(option) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) }
+        },
+    )
+}
+
+@Composable
 private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
@@ -380,4 +524,12 @@ private fun languageLabel(language: AppLanguage): String = when (language) {
     AppLanguage.SYSTEM -> stringResource(R.string.settings_language_system)
     AppLanguage.ENGLISH -> "English"
     AppLanguage.SIMPLIFIED_CHINESE -> "简体中文"
+}
+
+private fun imageThresholdLabel(value: Long): String = when (value) {
+    512L * 1024 -> "512 KB"
+    1L * 1024 * 1024 -> "1 MB"
+    2L * 1024 * 1024 -> "2 MB"
+    4L * 1024 * 1024 -> "4 MB"
+    else -> "${value / (1024 * 1024)} MB"
 }

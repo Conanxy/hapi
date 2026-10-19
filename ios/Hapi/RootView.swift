@@ -12,6 +12,7 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
     @State private var themePrefs = ThemePrefs()
+    @State private var imageCompressionPrefs = ImageCompressionPrefs()
 
     var body: some View {
         @Bindable var model = model
@@ -69,6 +70,7 @@ struct RootView: View {
         // the palette resolution only consults it in `.system` mode.)
         .preferredColorScheme(themePrefs.mode.preferredColorScheme)
         .environment(themePrefs)
+        .environment(imageCompressionPrefs)
         .handlesHapiLinks()
     }
 }

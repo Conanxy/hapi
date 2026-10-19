@@ -14,6 +14,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import app.hapi.companion.feature.settings.ImageCompressionSettings
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,6 +57,7 @@ class CameraCapture(val uri: Uri, val file: File) {
  */
 class AttachmentPreparer(
     context: Context,
+    private val imageCompressionSettings: ImageCompressionSettings = ImageCompressionSettings.DEFAULT,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val appContext = context.applicationContext
@@ -83,14 +85,14 @@ class AttachmentPreparer(
 
         // Reject before reading when the provider already told us it's hopeless.
         statedSize?.let { size ->
-            if (AttachmentPolicy.planFor(mimeType, size) == AttachmentPolicy.Plan.Reject) {
+            if (AttachmentPolicy.planFor(mimeType, size, imageCompressionSettings) == AttachmentPolicy.Plan.Reject) {
                 return@withContext PrepareResult.TooLarge(filename, size)
             }
         }
 
         // Providers may report no size — read behind a capped stream so a
         // surprise multi-GB pick cannot OOM the process.
-        val readCap = AttachmentPolicy.readCapFor(mimeType)
+        val readCap = AttachmentPolicy.readCapFor(mimeType, imageCompressionSettings)
         val original = try {
             resolver.openInputStream(uri)?.use { readUpTo(it, readCap) }
         } catch (_: Exception) {
@@ -125,7 +127,7 @@ class AttachmentPreparer(
     /** Policy application over in-memory bytes (shared by every pick source). */
     private fun prepareBytes(filename: String, mimeType: String, original: ByteArray): PrepareResult {
         val id = "att-${UUID.randomUUID()}"
-        return when (AttachmentPolicy.planFor(mimeType, original.size.toLong())) {
+        return when (AttachmentPolicy.planFor(mimeType, original.size.toLong(), imageCompressionSettings)) {
             AttachmentPolicy.Plan.Reject -> PrepareResult.TooLarge(filename, original.size.toLong())
 
             AttachmentPolicy.Plan.KeepOriginal -> PrepareResult.Ready(
@@ -171,8 +173,8 @@ class AttachmentPreparer(
     private fun recompress(original: ByteArray): ByteArray? {
         val encoded = encodeScaledJpeg(
             original,
-            AttachmentPolicy.MAX_IMAGE_DIMENSION,
-            AttachmentPolicy.COMPRESS_JPEG_QUALITY,
+            imageCompressionSettings.maxDimension,
+            imageCompressionSettings.jpegQuality,
         ) ?: return null
         // Belt-and-braces: a 2048px JPEG is always far under 50 MB, but the
         // wire cap is a hard contract.

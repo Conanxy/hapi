@@ -137,6 +137,12 @@
     <string name="settings_dynamic_color_oled_note">Not available with OLED black.</string>
 
     <string name="settings_section_language">Language</string>
+    <string name="settings_section_image_uploads">Image uploads</string>
+    <string name="settings_image_compression_enabled">Compress images before upload</string>
+    <string name="settings_image_compression_enabled_description">Only picked images above the threshold are resized and converted to JPEG.</string>
+    <string name="settings_image_compression_threshold">Compress images larger than</string>
+    <string name="settings_image_compression_dimension">Longest image edge</string>
+    <string name="settings_image_compression_quality">JPEG quality</string>
     <string name="settings_language">App language</string>
     <string name="settings_language_system">Follow system</string>
 

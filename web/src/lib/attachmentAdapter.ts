@@ -5,6 +5,7 @@ import { isImageMimeType } from '@/lib/fileAttachments'
 import { randomId } from '@/lib/randomId'
 import { getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
 import type { AttachmentDraftHandoff } from '@/lib/composer-draft-transfer'
+import { prepareImageFileForUpload } from '@/lib/imageCompression'
 
 /** Composer / share upload ceiling — keep deep-link fetch in sync. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -66,13 +67,16 @@ export function createAttachmentAdapter(
             }
 
             const id = restored?.id ?? randomId()
-            const contentType = file.type || 'application/octet-stream'
 
             try {
+                // Compress picked images before any Base64 read or upload.
+                const preparedFile = await prepareImageFileForUpload(file)
+                const contentType = preparedFile.type || 'application/octet-stream'
+                const name = preparedFile.name
                 let previewUrl: string | undefined
-                if (isImageMimeType(contentType) && file.size <= MAX_PREVIEW_BYTES) {
+                if (isImageMimeType(contentType) && preparedFile.size <= MAX_PREVIEW_BYTES) {
                     try {
-                        previewUrl = await fileToDataUrl(file)
+                        previewUrl = await fileToDataUrl(preparedFile)
                     } catch {
                         // Preview generation is optional; retry the read for the upload payload below.
                     }
@@ -81,9 +85,9 @@ export function createAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'running', reason: 'uploading', progress: 0 },
                     previewUrl
                 } as PendingUploadAttachment
@@ -92,13 +96,13 @@ export function createAttachmentAdapter(
                     return
                 }
 
-                if (file.size > MAX_UPLOAD_BYTES) {
+                if (preparedFile.size > MAX_UPLOAD_BYTES) {
                     yield {
                         id,
                         type: 'file',
-                        name: file.name,
+                        name,
                         contentType,
-                        file,
+                        file: preparedFile,
                         status: { type: 'incomplete', reason: 'error' }
                     }
                     return
@@ -111,7 +115,7 @@ export function createAttachmentAdapter(
                 if (uploadSessionId !== sessionId && onSessionResolved) {
                     await onSessionResolved(uploadSessionId, {
                         id,
-                        file,
+                        file: preparedFile,
                         previewUrl,
                         isCancelled: () => cancelledAttachmentIds.has(id),
                     })
@@ -123,7 +127,7 @@ export function createAttachmentAdapter(
 
                 const content = previewUrl
                     ? base64FromDataUrl(previewUrl)
-                    : await fileToBase64(file)
+                    : await fileToBase64(preparedFile)
 
                 if (cancelledAttachmentIds.has(id)) {
                     return
@@ -132,14 +136,14 @@ export function createAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'running', reason: 'uploading', progress: 50 },
                     previewUrl
                 } as PendingUploadAttachment
 
-                const result = await api.uploadFile(uploadSessionId, file.name, content, contentType)
+                const result = await api.uploadFile(uploadSessionId, name, content, contentType)
                 if (cancelledAttachmentIds.has(id)) {
                     if (result.success && result.path) {
                         await deleteUpload(result.path, uploadSessionId)
@@ -151,9 +155,9 @@ export function createAttachmentAdapter(
                     yield {
                         id,
                         type: 'file',
-                        name: file.name,
+                        name,
                         contentType,
-                        file,
+                        file: preparedFile,
                         status: { type: 'incomplete', reason: 'error' }
                     }
                     return
@@ -162,9 +166,9 @@ export function createAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
+                    name,
                     contentType,
-                    file,
+                    file: preparedFile,
                     status: { type: 'requires-action', reason: 'composer-send' },
                     path: result.path,
                     previewUrl,
@@ -176,7 +180,7 @@ export function createAttachmentAdapter(
                     id,
                     type: 'file',
                     name: file.name,
-                    contentType,
+                    contentType: file.type || 'application/octet-stream',
                     file,
                     status: { type: 'incomplete', reason: 'error' }
                 }

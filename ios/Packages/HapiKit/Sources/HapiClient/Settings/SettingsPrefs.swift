@@ -67,6 +67,114 @@ public enum AppLanguage: String, CaseIterable, Sendable {
     }
 }
 
+/// Local-only image upload compression settings. These affect picked images
+/// before their first upload; generated and already stored attachments do not
+/// read this preference.
+public struct ImageCompressionSettings: Equatable, Sendable {
+    public static let `default` = ImageCompressionSettings(
+        enabled: true,
+        thresholdBytes: 1 * 1024 * 1024,
+        maxDimension: 2560,
+        jpegQuality: 0.90
+    )
+
+    public let enabled: Bool
+    public let thresholdBytes: Int
+    public let maxDimension: Int
+    public let jpegQuality: Double
+
+    public init(
+        enabled: Bool,
+        thresholdBytes: Int,
+        maxDimension: Int,
+        jpegQuality: Double
+    ) {
+        self.enabled = enabled
+        self.thresholdBytes = thresholdBytes
+        self.maxDimension = maxDimension
+        self.jpegQuality = jpegQuality
+    }
+}
+
+/// Image upload compression persistence over `UserDefaults`.
+@MainActor @Observable
+public final class ImageCompressionPrefs {
+    public private(set) var settings: ImageCompressionSettings
+
+    private let defaults: UserDefaults
+
+    public static let enabledKey = "settings.imageCompression.enabled"
+    public static let thresholdBytesKey = "settings.imageCompression.thresholdBytes"
+    public static let maxDimensionKey = "settings.imageCompression.maxDimension"
+    public static let jpegQualityKey = "settings.imageCompression.jpegQuality"
+
+    private static let thresholdOptions = [512 * 1024, 1 * 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024]
+    private static let dimensionOptions = [1280, 1920, 2560, 4096]
+    private static let qualityOptions = [0.70, 0.80, 0.85, 0.90, 0.95]
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let fallback = ImageCompressionSettings.default
+        let storedThreshold = defaults.object(forKey: Self.thresholdBytesKey) as? Int
+        let storedDimension = defaults.object(forKey: Self.maxDimensionKey) as? Int
+        let storedQuality = defaults.object(forKey: Self.jpegQualityKey) as? Double
+        settings = ImageCompressionSettings(
+            enabled: defaults.object(forKey: Self.enabledKey) as? Bool ?? fallback.enabled,
+            thresholdBytes: Self.thresholdOptions.contains(storedThreshold ?? 0)
+                ? storedThreshold!
+                : fallback.thresholdBytes,
+            maxDimension: Self.dimensionOptions.contains(storedDimension ?? 0)
+                ? storedDimension!
+                : fallback.maxDimension,
+            jpegQuality: storedQuality.map { Self.qualityOptions.contains($0) ? $0 : fallback.jpegQuality }
+                ?? fallback.jpegQuality
+        )
+    }
+
+    public func setEnabled(_ enabled: Bool) {
+        settings = ImageCompressionSettings(
+            enabled: enabled,
+            thresholdBytes: settings.thresholdBytes,
+            maxDimension: settings.maxDimension,
+            jpegQuality: settings.jpegQuality
+        )
+        defaults.set(enabled, forKey: Self.enabledKey)
+    }
+
+    public func setThresholdBytes(_ thresholdBytes: Int) {
+        guard Self.thresholdOptions.contains(thresholdBytes) else { return }
+        settings = ImageCompressionSettings(
+            enabled: settings.enabled,
+            thresholdBytes: thresholdBytes,
+            maxDimension: settings.maxDimension,
+            jpegQuality: settings.jpegQuality
+        )
+        defaults.set(thresholdBytes, forKey: Self.thresholdBytesKey)
+    }
+
+    public func setMaxDimension(_ maxDimension: Int) {
+        guard Self.dimensionOptions.contains(maxDimension) else { return }
+        settings = ImageCompressionSettings(
+            enabled: settings.enabled,
+            thresholdBytes: settings.thresholdBytes,
+            maxDimension: maxDimension,
+            jpegQuality: settings.jpegQuality
+        )
+        defaults.set(maxDimension, forKey: Self.maxDimensionKey)
+    }
+
+    public func setJPEGQuality(_ jpegQuality: Double) {
+        guard Self.qualityOptions.contains(jpegQuality) else { return }
+        settings = ImageCompressionSettings(
+            enabled: settings.enabled,
+            thresholdBytes: settings.thresholdBytes,
+            maxDimension: settings.maxDimension,
+            jpegQuality: jpegQuality
+        )
+        defaults.set(jpegQuality, forKey: Self.jpegQualityKey)
+    }
+}
+
 /// Appearance persistence over `UserDefaults` (app-wide, like the Android
 /// `hapi_prefs` DataStore). Read at the app root to drive the HapiUI palette,
 /// written by the settings screen; unreadable values degrade to defaults.

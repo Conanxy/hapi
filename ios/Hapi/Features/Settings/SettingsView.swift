@@ -68,6 +68,7 @@ struct SettingsView: View {
     @State private var model: SettingsModel
     @State private var languagePrefs: LanguagePrefs
     @Environment(ThemePrefs.self) private var themePrefs
+    @Environment(ImageCompressionPrefs.self) private var imageCompressionPrefs
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -84,6 +85,7 @@ struct SettingsView: View {
             List {
                 appearanceSection
                 languageSection
+                imageCompressionSection
                 notificationsSection
                 if model.isOwner {
                     insightsSection
@@ -168,6 +170,62 @@ struct SettingsView: View {
                 }
             }
         )
+    }
+
+    private var imageCompressionSection: some View {
+        Section {
+            Toggle(
+                "Compress images before upload",
+                isOn: Binding(
+                    get: { imageCompressionPrefs.settings.enabled },
+                    set: { imageCompressionPrefs.setEnabled($0) }
+                )
+            )
+            Picker(
+                "Compress images larger than",
+                selection: Binding(
+                    get: { imageCompressionPrefs.settings.thresholdBytes },
+                    set: { imageCompressionPrefs.setThresholdBytes($0) }
+                )
+            ) {
+                Text("512 KB").tag(512 * 1024)
+                Text("1 MB").tag(1 * 1024 * 1024)
+                Text("2 MB").tag(2 * 1024 * 1024)
+                Text("4 MB").tag(4 * 1024 * 1024)
+            }
+            .disabled(!imageCompressionPrefs.settings.enabled)
+            Picker(
+                "Longest image edge",
+                selection: Binding(
+                    get: { imageCompressionPrefs.settings.maxDimension },
+                    set: { imageCompressionPrefs.setMaxDimension($0) }
+                )
+            ) {
+                Text("1280 px").tag(1280)
+                Text("1920 px").tag(1920)
+                Text("2560 px").tag(2560)
+                Text("4096 px").tag(4096)
+            }
+            .disabled(!imageCompressionPrefs.settings.enabled)
+            Picker(
+                "JPEG quality",
+                selection: Binding(
+                    get: { Int(imageCompressionPrefs.settings.jpegQuality * 100) },
+                    set: { imageCompressionPrefs.setJPEGQuality(Double($0) / 100) }
+                )
+            ) {
+                Text("70").tag(70)
+                Text("80").tag(80)
+                Text("85").tag(85)
+                Text("90").tag(90)
+                Text("95").tag(95)
+            }
+            .disabled(!imageCompressionPrefs.settings.enabled)
+        } header: {
+            Text("Image uploads")
+        } footer: {
+            Text("Settings are stored on this device and apply before the first upload.")
+        }
     }
 
     /// Push status (P3): permission state, how many paired hubs currently

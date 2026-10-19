@@ -413,7 +413,7 @@ fun HapiNavigation() {
             val appContext = LocalContext.current.applicationContext
             val holder = viewModel<ScratchlistViewModelHolder>(
                 key = "scratchlist:${hubGraph.hubUrl}:$sessionId",
-                factory = viewModelFactory { ScratchlistViewModelHolder(hubGraph, sessionId, appContext) },
+                factory = viewModelFactory { ScratchlistViewModelHolder(graph, hubGraph, sessionId, appContext) },
             )
             // "Send to composer" reuses the chat ViewModel of the entry below
             // this route (same holder key + the chat entry as owner), so the
@@ -678,6 +678,7 @@ private class SettingsViewModelHolder(graph: AppGraph, hubGraph: HubGraph) : Vie
     val viewModel = SettingsViewModel(
         themePrefs = graph.themePrefs,
         languagePrefs = graph.languagePrefs,
+        imageCompressionPrefs = graph.imageCompressionPrefs,
         hubUrl = hubGraph.hubUrl,
         currentJwt = {
             // Store reads may block (EncryptedSharedPreferences) and the
@@ -723,6 +724,7 @@ private class StorageViewModelHolder(hubGraph: HubGraph) : ViewModel() {
 
 /** Shell for the per-session scratchlist workbench (B-M4d). */
 private class ScratchlistViewModelHolder(
+    graph: AppGraph,
     hubGraph: HubGraph,
     sessionId: String,
     appContext: Context,
@@ -733,7 +735,10 @@ private class ScratchlistViewModelHolder(
         sessionId = sessionId,
         store = hubGraph.scratchlistStore,
         scope = scope,
-        importer = ContentResolverAttachmentImporter(appContext),
+        importer = ContentResolverAttachmentImporter(
+            context = appContext,
+            imageCompressionSettings = { graph.imageCompressionSettings.value },
+        ),
     )
 
     override fun onCleared() {
