@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -248,8 +248,10 @@ describe('codexTranscriptLocator', () => {
         expect(located).toEqual([]);
 
         await appendFile(transcriptPath, userEvent.slice(splitAt));
-        await wait(100);
-        expect(located).toEqual([transcriptPath]);
+        await vi.waitFor(() => expect(located).toEqual([transcriptPath]), {
+            timeout: 1000,
+            interval: 25
+        });
     });
 
     it('ignores pre-existing fresh transcripts even when they receive new activity', async () => {
