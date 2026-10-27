@@ -524,6 +524,7 @@ private fun languageLabel(language: AppLanguage): String = when (language) {
     AppLanguage.SYSTEM -> stringResource(R.string.settings_language_system)
     AppLanguage.ENGLISH -> "English"
     AppLanguage.SIMPLIFIED_CHINESE -> "简体中文"
+    AppLanguage.RUSSIAN -> "Русский"
 }
 
 private fun imageThresholdLabel(value: Long): String = when (value) {

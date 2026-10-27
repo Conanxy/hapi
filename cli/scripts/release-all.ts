@@ -6,7 +6,11 @@
  * 3. Publish platform packages first (the wrapper pins them exactly)
  * 4. Verify all platform packages are live on npm
  * 5. Publish main package
- * 6. Git commit + tag + push
+ * 6. bun install --lockfile-only --os=* --cpu=* (to lock all platform packages)
+ * 7. Git commit + tag + push
+ *
+ * Re-running with the same version is safe: packages already on npm are skipped,
+ * so a release that failed midway can be resumed.
  */
 
 import { execSync } from 'node:child_process';
@@ -21,6 +25,7 @@ const NPM_SCOPE = '@youngfine';
 const MAIN_PACKAGE = `${NPM_SCOPE}/hapi`;
 const NPM_DIST_TAG = 'latest';
 const VERSION_PATTERN = /^\d+\.\d+\.\d+-youngfine\.\d+$/;
+const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'];
 
 // 解析参数
 const args = process.argv.slice(2);
@@ -71,11 +76,48 @@ function publishPackage(name: string, cwd: string, provenanceFlag: string): void
         console.log(`   ✓ ${name}@${version} already published; skipping`);
         return;
     }
+    if (!dryRun && process.env.GITHUB_ACTIONS !== 'true') {
+        assertNpmLogin();
+    }
     run(
         `npm publish --access public --tag ${NPM_DIST_TAG}${provenanceFlag}${dryRun ? ' --dry-run' : ''}`,
         cwd,
         { executeDuringDryRun: dryRun }
     );
+}
+
+function assertNpmLogin(): string {
+    try {
+        const npmUser = execSync('npm whoami', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        if (npmUser !== 'youngfine') {
+            throw new Error(`Expected npm user youngfine, got ${npmUser}`);
+        }
+        return npmUser;
+    } catch {
+        console.error('❌ Not logged in to npm as youngfine. Run `npm login` first.');
+        process.exit(1);
+    }
+}
+
+// npm answers an unauthorized publish to a scoped package with a misleading 404,
+// so verify write access to every package before publishing anything.
+function assertWriteAccess(packages: string[]): void {
+    let access: Record<string, string>;
+    try {
+        access = JSON.parse(execSync('npm access list packages --json', {
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }));
+    } catch {
+        console.error('❌ Could not list npm package access. Check that your npm token is valid.');
+        process.exit(1);
+    }
+    const missing = packages.filter(name => access[name] !== 'read-write');
+    if (missing.length > 0) {
+        console.error(`❌ npm token lacks write access to: ${missing.join(', ')}`);
+        console.error(`   Use a token with read-write permission on all ${MAIN_PACKAGE}* packages.`);
+        process.exit(1);
+    }
 }
 
 async function waitForPlatformPackages(platforms: string[], expectedVersion: string): Promise<void> {
@@ -86,14 +128,9 @@ async function waitForPlatformPackages(platforms: string[], expectedVersion: str
 
     while (pending.size > 0) {
         for (const name of [...pending]) {
-            try {
-                const published = execSync(`npm view ${name}@${expectedVersion} version`, { encoding: 'utf-8' }).trim();
-                if (published === expectedVersion) {
-                    console.log(`   ✓ ${name}@${expectedVersion} is live on npm`);
-                    pending.delete(name);
-                }
-            } catch {
-                // Not published yet, keep waiting
+            if (packageVersionExists(name, expectedVersion)) {
+                console.log(`   ✓ ${name}@${expectedVersion} is live on npm`);
+                pending.delete(name);
             }
         }
         if (pending.size === 0) {
@@ -145,20 +182,14 @@ async function main(version: string): Promise<void> {
 
     // Pre-check: Ensure npm is logged in (skip in dry-run mode)
     if (!dryRun && process.env.GITHUB_ACTIONS !== 'true') {
-        try {
-            const npmUser = execSync('npm whoami', { encoding: 'utf-8' }).trim();
-            if (npmUser !== 'youngfine') {
-                throw new Error(`Expected npm user youngfine, got ${npmUser}`);
-            }
-            console.log(`   ✓ Logged in to npm as: ${npmUser}`);
-        } catch {
-            console.error(`❌ Not logged in to npm as youngfine. Run \`npm login\` first.`);
-            process.exit(1);
-        }
+        const npmUser = assertNpmLogin();
+        console.log(`   ✓ Logged in to npm as: ${npmUser}`);
+        assertWriteAccess([MAIN_PACKAGE, ...platforms.map(platform => `${MAIN_PACKAGE}-${platform}`)]);
+        console.log('   ✓ npm token can publish all packages');
     } else if (process.env.GITHUB_ACTIONS === 'true') {
         console.log('   ✓ GitHub Actions trusted publishing mode');
     } else {
-        console.log('   ✓ Skipping npm login check (dry-run)');
+        console.log('   ✓ Skipping npm login and access checks (dry-run)');
     }
 
     // Step 1: Update CLI, shared, iOS, and Android versions.
@@ -187,7 +218,6 @@ async function main(version: string): Promise<void> {
     // Step 3: Prepare and publish platform packages
     console.log('\n📤 Step 3: Publishing platform packages...');
     run('bun run prepare-npm-packages', projectRoot, { executeDuringDryRun: dryRun });
-    const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'];
     const provenanceFlag = process.env.GITHUB_ACTIONS === 'true' ? ' --provenance' : '';
     for (const platform of platforms) {
         const npmDir = join(projectRoot, 'npm', platform);
