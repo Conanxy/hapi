@@ -70,8 +70,14 @@ See `src/router.tsx` for route definitions.
 - Pasted text becomes a context attachment at 3,000 characters or more than
   60 lines by default; both thresholds are configurable in Chat settings.
   Sent user messages longer than 15 lines are collapsed by default.
+- Failed text-context uploads retain the dialog's editable fields. Failed
+  automatic conversions restore pasted text at the current selection, preserving
+  session mentions; failed chips are removed so retries do not duplicate them.
 - Clipboard files use the same generic attachment path as file picks and
   drag-and-drop.
+- Image upload preparation runs once for the chosen bytes. Attachment drafts
+  retain that decision across memory copies, reloads, session resume, and
+  Scratchlist migration, including when preparation keeps the original image.
 - Permission mode toggle (default/acceptEdits/auto/bypassPermissions/plan).
 - Model selection (default/sonnet/sonnet[1m]/opus/opus[1m]).
 - Session abort and mode switch controls.

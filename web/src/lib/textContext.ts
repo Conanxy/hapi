@@ -1,3 +1,5 @@
+import type { ComposerRuntime } from '@assistant-ui/react'
+
 export const AUTO_TEXT_CONTEXT_CHARACTER_THRESHOLD = 3_000
 export const AUTO_TEXT_CONTEXT_LINE_THRESHOLD = 60
 export const USER_MESSAGE_COLLAPSED_LINE_LIMIT = 15
@@ -102,4 +104,35 @@ export function createTextContextFile(
             lastModified: now,
         },
     )
+}
+
+/**
+ * assistant-ui resolves addAttachment even for an incomplete upload. Read the
+ * live runtime (the UI snapshot batches updates) and only inspect this File.
+ */
+export async function addTextContextAttachment(
+    composer: ComposerRuntime | undefined,
+    file: File,
+    failureMessage: string,
+): Promise<void> {
+    if (!composer) throw new Error(failureMessage)
+    const findAttachmentIndex = () => composer.getState().attachments.findIndex(
+        (attachment) => attachment.file === file,
+    )
+    try {
+        await composer.addAttachment(file)
+        const attachment = composer.getState().attachments[findAttachmentIndex()]
+        if (attachment?.status.type === 'incomplete' && attachment.status.reason === 'error') {
+            throw new Error(failureMessage)
+        }
+        // A cancelled pick is absent; a successful cross-session handoff can
+        // leave a running chip on the retiring composer. Neither is a failure.
+    } catch (error) {
+        const index = findAttachmentIndex()
+        const attachment = composer.getState().attachments[index]
+        if (attachment?.status.type === 'incomplete' && attachment.status.reason === 'error') {
+            await composer.getAttachmentByIndex(index).remove()
+        }
+        throw error
+    }
 }

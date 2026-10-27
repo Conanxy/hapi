@@ -107,7 +107,11 @@ export function compressedImageFilename(original: string): string {
 
 const preparedFiles = new WeakSet<File>()
 
-/** Mark bytes that came from an existing stored attachment as already prepared. */
+export function isFileUploadReady(file: File): boolean {
+    return preparedFiles.has(file)
+}
+
+/** Remember the bytes chosen for upload, including originals kept by preparation. */
 export function markFileAsUploadReady(file: File): File {
     preparedFiles.add(file)
     return file
@@ -185,31 +189,31 @@ async function encodeAsJpeg(file: File, settings: ImageCompressionSettings): Pro
 /**
  * Prepare a picked image before its first upload. Unsupported or undecodable
  * formats keep the original file so an image picker never becomes unusable.
+ * Retain that decision on retries; draft storage carries it across File clones.
  */
 export async function prepareImageFileForUpload(
     file: File,
     settings: ImageCompressionSettings = getImageCompressionSettings(),
 ): Promise<File> {
     if (
-        preparedFiles.has(file)
+        isFileUploadReady(file)
         || !settings.enabled
         || file.size <= settings.thresholdBytes
         || !isRecompressibleImageMimeType(file.type)
     ) {
-        return file
+        return markFileAsUploadReady(file)
     }
 
     try {
         const blob = await encodeAsJpeg(file, settings)
-        if (!blob || blob.size >= file.size) return file
+        if (!blob || blob.size >= file.size) return markFileAsUploadReady(file)
         const compressed = new File(
             [blob],
             compressedImageFilename(file.name),
             { type: 'image/jpeg', lastModified: file.lastModified },
         )
-        preparedFiles.add(compressed)
-        return compressed
+        return markFileAsUploadReady(compressed)
     } catch {
-        return file
+        return markFileAsUploadReady(file)
     }
 }

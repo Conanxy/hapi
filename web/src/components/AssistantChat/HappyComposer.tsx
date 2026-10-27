@@ -76,6 +76,7 @@ import type { ComposerSendIntent } from '@/lib/messageDelivery'
 import type { MessageDeliveryMode } from '@hapi/protocol'
 import { moveAttachmentId, orderItemsById, reconcileAttachmentOrder, type AttachmentDropPosition } from '@/lib/attachmentOrder'
 import {
+    addTextContextAttachment,
     createTextContextFile,
     insertTextAtSelection,
     shouldConvertPastedTextToContext,
@@ -570,8 +571,6 @@ export function HappyComposer(props: {
         text: '',
         selection: { start: 0, end: 0 }
     })
-    const inputStateRef = useRef(inputState)
-    inputStateRef.current = inputState
     const [isExpanded, setIsExpanded] = useState(false)
     const lastSendAcceptanceRef = useRef(props.sendAcceptance)
     const pendingSendAttemptIdRef = useRef<string | null>(null)
@@ -1482,24 +1481,29 @@ export function HappyComposer(props: {
 
         e.preventDefault()
         try {
-            await api.composer().addAttachment(createTextContextFile(pastedText))
+            await addTextContextAttachment(
+                api.composer().__internal_getRuntime?.(),
+                createTextContextFile(pastedText),
+                t('composer.textContext.addFailed'),
+            )
         } catch (error) {
             console.error('Error adding pasted text context:', error)
+            if (richMentionsEnabled) {
+                richInputRef.current?.insertText(pastedText)
+                return
+            }
+            const input = textareaRef.current
+            if (!input) return
             const restored = insertTextAtSelection(
-                inputStateRef.current.text,
-                inputStateRef.current.selection,
+                input.value,
+                { start: input.selectionStart, end: input.selectionEnd },
                 pastedText,
             )
             handleUserEdit()
             api.composer().setText(restored.text)
             setInputState(restored)
             setTimeout(() => {
-                if (richMentionsEnabled) {
-                    richInputRef.current?.focus()
-                    return
-                }
-                const input = textareaRef.current
-                if (!input) return
+                if (textareaRef.current !== input) return
                 input.setSelectionRange(restored.selection.start, restored.selection.end)
                 input.focus()
             }, 0)
@@ -1510,13 +1514,18 @@ export function HappyComposer(props: {
         pendingSchedule,
         props.scratchlistMode,
         richMentionsEnabled,
+        t,
         textContextCharacterThreshold,
         textContextLineThreshold,
     ])
 
     const handleAddTextContext = useCallback(async (text: string, name: string) => {
-        await api.composer().addAttachment(createTextContextFile(text, name))
-    }, [api])
+        await addTextContextAttachment(
+            api.composer().__internal_getRuntime?.(),
+            createTextContextFile(text, name),
+            t('composer.textContext.addFailed'),
+        )
+    }, [api, t])
 
     // Opens (or closes) the settings sheet. `section` anchors the sheet to a
     // single section ('model' / 'effort'); the gear passes nothing = full sheet.

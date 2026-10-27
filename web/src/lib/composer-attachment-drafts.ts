@@ -1,3 +1,5 @@
+import { isFileUploadReady, markFileAsUploadReady } from '@/lib/imageCompression'
+
 const DB_NAME = 'hapi-composer-drafts'
 const DB_VERSION = 1
 const STORE = 'attachments'
@@ -12,6 +14,7 @@ type StoredAttachment = {
     path?: string
     previewUrl?: string
     uploadSessionId?: string
+    uploadReady?: boolean
 }
 
 type StoredAttachmentDraft = {
@@ -64,6 +67,7 @@ function copyFile(file: File): File {
     })
     const metadata = restoredUploadMetadata.get(file)
     if (metadata) restoredUploadMetadata.set(copy, metadata)
+    if (isFileUploadReady(file)) markFileAsUploadReady(copy)
     return copy
 }
 
@@ -78,6 +82,7 @@ function toStoredFile(attachment: AttachmentDraftInput): StoredAttachment {
         path: attachment.path,
         previewUrl: attachment.previewUrl,
         uploadSessionId: attachment.uploadSessionId,
+        uploadReady: isFileUploadReady(file) || Boolean(attachment.path),
     }
 }
 
@@ -86,6 +91,8 @@ function toFile(file: StoredAttachment): File {
         type: file.type,
         lastModified: file.lastModified,
     })
+    // An existing upload path also identifies bytes already chosen for upload.
+    if (file.uploadReady || file.path) markFileAsUploadReady(restored)
     // Always retain the stored id so pathless pending picks (failed resume)
     // round-trip without inventing a synthetic id on the next persist pass.
     restoredUploadMetadata.set(restored, {

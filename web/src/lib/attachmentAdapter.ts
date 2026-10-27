@@ -67,10 +67,11 @@ export function createAttachmentAdapter(
             }
 
             const id = restored?.id ?? randomId()
+            let preparedFile = file
 
             try {
                 // Compress picked images before any Base64 read or upload.
-                const preparedFile = await prepareImageFileForUpload(file)
+                preparedFile = await prepareImageFileForUpload(file)
                 const contentType = preparedFile.type || 'application/octet-stream'
                 const name = preparedFile.name
                 let previewUrl: string | undefined
@@ -179,9 +180,9 @@ export function createAttachmentAdapter(
                 yield {
                     id,
                     type: 'file',
-                    name: file.name,
-                    contentType: file.type || 'application/octet-stream',
-                    file,
+                    name: preparedFile.name,
+                    contentType: preparedFile.type || 'application/octet-stream',
+                    file: preparedFile,
                     status: { type: 'incomplete', reason: 'error' }
                 }
             }
