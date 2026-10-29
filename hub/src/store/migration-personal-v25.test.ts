@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from './index'
 
-describe('personal fork v25 to v28 migration', () => {
+describe('personal fork v25 to v29 migration', () => {
     it('preserves encrypted vivo registrations, session metadata, and queued text-context messages', () => {
         const directory = mkdtempSync(join(tmpdir(), 'hapi-personal-v25-'))
         const dbPath = join(directory, 'hapi.db')
@@ -26,7 +26,7 @@ describe('personal fork v25 to v28 migration', () => {
             try {
                 const session = original.sessions.getOrCreateSession('personal-session', metadata, null, namespace)
                 sessionId = session.id
-                messageId = original.messages.addMessage(sessionId, content, 'local-context').id
+                messageId = original.messages.addMessage(sessionId, content, 'local-context', null, 1_000).id
                 original.fcm.upsertDevice(namespace, {
                     token: 'vivo-registration', platform: 'vivo', deviceId: 'vivo-phone', pushKey
                 })
@@ -34,13 +34,14 @@ describe('personal fork v25 to v28 migration', () => {
                 original.close()
             }
 
-            // Reconstruct the v25 schema by removing each artifact added in v26-v28.
+            // Reconstruct the v25 schema by removing each artifact added in v26-v29.
             const legacy = new Database(dbPath)
             try {
                 legacy.exec(`
                     DROP TABLE session_turns;
                     DROP INDEX idx_messages_immediate_queued;
                     DROP INDEX idx_messages_future_scheduled_queued;
+                    ALTER TABLE sessions DROP COLUMN last_user_message_at;
                     PRAGMA user_version = 25;
                 `)
             } finally {
@@ -50,6 +51,7 @@ describe('personal fork v25 to v28 migration', () => {
             const migrated = new Store(dbPath)
             try {
                 expect(migrated.sessions.getSession(sessionId)?.metadata).toEqual(metadata)
+                expect(migrated.sessions.getSession(sessionId)?.lastUserMessageAt).toBe(1_000)
                 expect(migrated.messages.getMessages(sessionId)).toEqual([
                     expect.objectContaining({ id: messageId, localId: 'local-context', content })
                 ])

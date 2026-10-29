@@ -12,18 +12,23 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 - Integrated upstream tag `v0.31.2`, commit `7bf0e5bc`, on `2026-10-27`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
 - Published the npm wrapper and five platform packages: macOS ARM64/x64, Linux ARM64/x64, and Windows x64. They include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; this release does not include an APK or an iOS app build.
 
-## 0.33.1 Integration Candidate (Unpublished)
+## 0.33.2 Integration Candidate (Unpublished)
 
-The source candidate `0.33.1-youngfine.1` integrates upstream `v0.33.1`
-(`a6cf8fd0`). The published version and installation command below remain
+The source candidate `0.33.2-youngfine.1` integrates upstream `v0.33.2`
+(`730dfcb2`), including the previous `v0.33.1` integration. The published version and installation command below remain
 `0.31.2-youngfine.1` until the candidate is released.
 
+- Session lists now use the persisted last user-message time, so assistant output does not keep moving sessions. Manual pins remain available; the old fixed-order preference is removed.
+- Peer messages accept `queue` (default) and `steer`; steering requires an active Pi, Codex, or Cursor ACP turn. DSH retains queued peer delivery.
+- A single composer attachment no longer shows a reorder handle. Android uses the new choice dialogs for theme, language, and the fork's image compression options.
 - Sessions can open in separate windows, and manually chosen titles can be locked.
 - Codex can fork historical turns while a later turn is running; OpenCode can import local session history.
 - Voice drafts persist across session navigation, and tool cards support combined, compact, and detailed display.
-- `hapi usage` and `/api/activity` expose persisted agent work and wait times. These activity metrics are separate from token usage. The Hub database schema advances to v28; back up `HAPI_HOME` before upgrading.
+- `hapi usage` and `/api/activity` expose persisted agent work and wait times. These activity metrics are separate from token usage. The Hub database schema advances to v29 and backfills session ordering from existing messages; back up `HAPI_HOME` before upgrading.
 - Bun 1.4.4 is required for builds. The npm launcher rejects mismatched platform packages and offers version-pinned reinstall commands.
 - The fork retains text-context recovery, image compression preferences and draft preparation state, double-Esc interruption, DSH extensions, and opt-in vivo push. Existing native compression controls remain on Android's General settings subpage.
+
+See the [v0.33.2 integration record](docs/upstream-v0.33.2-integration.md) for scope and verification.
 
 ## What's New in 0.31.2-youngfine.1
 
@@ -32,7 +37,7 @@ The source candidate `0.33.1-youngfine.1` integrates upstream `v0.33.1`
 | Update | Where to try it |
 |--------|-----------------|
 | Terminal output to Agent | Open a session's **Terminal**, then choose **To agent** to append the scrollback to the chat draft. Select text first to use **Selection to agent** instead. Review the draft and add a question before sending. |
-| Fixed session order | Enable **Settings > Display > Fixed session order**. Sessions and workspaces stay ordered by creation time, newest first, instead of moving with activity. Pins remain at the top; pinning in-progress sessions is suspended while this setting is on. |
+| Fixed session order (0.31.2) | Enable **Settings > Display > Fixed session order** in 0.31.2. The 0.33.2 candidate replaces this preference with ordering by last user-message time. |
 | 130% font size | Select **130%** in **Settings > Display > Font size**. |
 | External links in a new tab | Enable **Settings > Display > Links > Open external links in a new tab**. |
 | Dictation shortcut | Use **Ctrl/Cmd+Shift+D** to start or stop voice input when voice is available. The collapsed composer's primary voice/send control also has a larger hit target. |
