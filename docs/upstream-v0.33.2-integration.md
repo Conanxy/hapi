@@ -5,7 +5,7 @@
 1. 集成日期：2026-10-29；基于个人 main `90b814ac`，增量合入上游
    `v0.33.2`（`730dfcb22e31ec5572446d066cbb5e92d6a6254d`）。
 2. 个人版本：`0.33.2-youngfine.1`；保留 `@youngfine` npm 包名和个人发布流程。
-3. v0.33.1 已合入个人 main，但没有发布 npm；此前已发布版本仍为
+3. v0.33.1 已合入个人 main，但没有单独发布 npm；上一个个人发布版本为
    `0.31.2-youngfine.1`。
 4. 本次授权包含本地全量测试、五个平台构建、提交合并推送及本地 npm 发布；
    CLI 测试使用独立临时 Hub，不操作现有 Hub、Runner 或智能体。
@@ -54,7 +54,8 @@
 | 构建路径检查 | 五个平台全部通过。 |
 | npm 包准备与发布预演 | 六个包全部通过 `release-all 0.33.2-youngfine.1 --dry-run --skip-build`；没有上传包或推送引用。 |
 | macOS 包签名 | ARM64、x64 均通过打包脚本的临时签名及验证。 |
-| npm 上传 | 尚未执行，当前 npm 身份检查返回 401，需要重新登录。 |
+| npm 上传 | 2026-10-29 完成，五个平台包先于主包发布；六个包的版本及 `latest` 均为 `0.33.2-youngfine.1`。 |
+| npm 发布后核对 | 六个包的 registry 校验值与上传产物一致；主包精确依赖五个平台的新版本，主包下载返回 HTTP 200。 |
 
 本地测试使用环境变量白名单，避免继承本机智能体启动覆盖项；
 不设置 `CI=true`，Windows PowerShell Docker 检查按既有本地条件执行或跳过。
@@ -71,11 +72,31 @@
 
 ## 发布检查点
 
-源码和新构建产物已经完成本地验证，双语 README 暂时保留候选版标记，
-避免把尚未上传的版本描述为已发布。npm 身份检查返回
-`E401 / 401 Unauthorized`，恢复登录后方可继续上传。
+1. 源码已作为 `6fa26060` 合入并推送个人 main，两个父提交分别为个人
+   `90b814ac` 和上游 `730dfcb2`。
+2. 最初的 npm 401 已通过重新登录解除；发布前确认身份为 `youngfine`，
+   六个包均有写权限，并完成 npm 要求的浏览器发布授权。
+3. 从集成 worktree 同步本次新构建的五个平台二进制到 main 的发布目录，
+   比较 SHA-256 一致后执行：
 
-发布应从合入后的 main 执行既有个人脚本，使用本次新构建的五个平台产物；
-不得改用旧的 v0.31.2 或 v0.33.1 二进制。五个平台包可查询后再发布主包，
-最后确认全部六个包的版本及 `latest` 标签，然后更新 README 的发布状态。
-服务器更新由用户自行执行现有运维脚本。
+   ```bash
+   bun run --cwd cli release-all 0.33.2-youngfine.1 --publish-npm --skip-build
+   ```
+
+4. 五个平台包经 npm 处理并可查询后再上传主包；主包包含更新后的双语 README，
+   安装命令使用新版本。未复用 v0.31.2 或 v0.33.1 二进制。
+5. 下列六个包的版本、`latest` 及 registry `dist.shasum` 全部核对一致；
+   主包的五项 `optionalDependencies` 均精确固定为 `0.33.2-youngfine.1`。
+
+| 包名 | `dist.shasum` |
+|------|---------------|
+| `@youngfine/hapi` | `bec72546ac51a1a9f75755d1956d0377bb5025c2` |
+| `@youngfine/hapi-darwin-arm64` | `65241689189364d7f0b6419f7e89dea20347b896` |
+| `@youngfine/hapi-darwin-x64` | `86e76e5c5fe79ae30ac663224dab65571bf9a1b1` |
+| `@youngfine/hapi-linux-arm64` | `9de076c79ff9fdd78b93a15bc032e02f773aa276` |
+| `@youngfine/hapi-linux-x64` | `e8649b4ed782a35d3c4d4a67ce66c9336d44902d` |
+| `@youngfine/hapi-win32-x64` | `ee2257359276f7c84e4f365147fb3c4524a28573` |
+
+本次未执行全局安装或服务器部署，也未启动现有 Hub、Runner 或智能体。
+服务器更新由用户自行执行现有运维脚本，显式指定新版本；
+该脚本在停服前检查 npm 下载，并在安装前备份现有 `HAPI_HOME`。

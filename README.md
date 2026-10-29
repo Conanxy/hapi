@@ -8,15 +8,14 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Current personal release: `@youngfine/hapi@0.31.2-youngfine.1`, published on `2026-10-27`.
-- Integrated upstream tag `v0.31.2`, commit `7bf0e5bc`, on `2026-10-27`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
+- Current personal release: `@youngfine/hapi@0.33.2-youngfine.1`, published on `2026-10-29`.
+- Integrated upstream tag `v0.33.2`, commit `730dfcb2`, on `2026-10-29`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
 - Published the npm wrapper and five platform packages: macOS ARM64/x64, Linux ARM64/x64, and Windows x64. They include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; this release does not include an APK or an iOS app build.
 
-## 0.33.2 Integration Candidate (Unpublished)
+## What's New in 0.33.2-youngfine.1
 
-The source candidate `0.33.2-youngfine.1` integrates upstream `v0.33.2`
-(`730dfcb2`), including the previous `v0.33.1` integration. The published version and installation command below remain
-`0.31.2-youngfine.1` until the candidate is released.
+Version `0.33.2-youngfine.1` integrates upstream `v0.33.2`
+(`730dfcb2`), including the previous `v0.33.1` integration.
 
 - Session lists now use the persisted last user-message time, so assistant output does not keep moving sessions. Manual pins remain available; the old fixed-order preference is removed.
 - Peer messages accept `queue` (default) and `steer`; steering requires an active Pi, Codex, or Cursor ACP turn. DSH retains queued peer delivery.
@@ -37,7 +36,7 @@ See the [v0.33.2 integration record](docs/upstream-v0.33.2-integration.md) for s
 | Update | Where to try it |
 |--------|-----------------|
 | Terminal output to Agent | Open a session's **Terminal**, then choose **To agent** to append the scrollback to the chat draft. Select text first to use **Selection to agent** instead. Review the draft and add a question before sending. |
-| Fixed session order (0.31.2) | Enable **Settings > Display > Fixed session order** in 0.31.2. The 0.33.2 candidate replaces this preference with ordering by last user-message time. |
+| Fixed session order (0.31.2) | Enable **Settings > Display > Fixed session order** in 0.31.2. Version 0.33.2 replaces this preference with ordering by last user-message time. |
 | 130% font size | Select **130%** in **Settings > Display > Font size**. |
 | External links in a new tab | Enable **Settings > Display > Links > Open external links in a new tab**. |
 | Dictation shortcut | Use **Ctrl/Cmd+Shift+D** to start or stop voice input when voice is available. The collapsed composer's primary voice/send control also has a larger hit target. |
@@ -108,7 +107,7 @@ Using this vivo integration requires Hub `.4` and the corresponding Android APK.
 ## Usage
 
 ```bash
-npm install -g @youngfine/hapi@0.31.2-youngfine.1 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.33.2-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```
