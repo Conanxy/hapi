@@ -8,11 +8,51 @@
 
 ## 版本与上游基线
 
-- 当前个人发布版本：`@youngfine/hapi@0.30.7-youngfine.5`。
-- 基于上游 `v0.30.7`，对应提交 `0239edf3`；保留该版本的 Web、CLI、Hub、Android 和 iOS 能力，并叠加下述个人改动。
-- 截至 `2026-10-13` 拉取核对，上游最新版本标签为 `v0.30.7`，但 `main` 已有后续开发提交；本发布不包含这些尚未合入的提交，不等同于同步上游最新 `main`。
+- 当前个人发布版本：`@youngfine/hapi@0.31.2-youngfine.1`，发布于 `2026-10-27`。
+- 已于 `2026-10-27` 合入上游标签 `v0.31.2`，对应提交 `7bf0e5bc`，并保留个人二开改动；本次发布以上述标签为上游基线。
+- 已发布 npm 主包及五个平台包：macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，本次不提供 APK 或 iOS 应用构建。
+
+## 0.33.1 集成候选版（尚未发布）
+
+源码候选版本 `0.33.1-youngfine.1` 合入上游 `v0.33.1`（`a6cf8fd0`）；
+正式发布前，当前已发布版本和下方安装命令仍为 `0.31.2-youngfine.1`。
+
+- 支持在独立窗口打开会话，并锁定手动设置的会话标题。
+- Codex 后续回合运行时可从历史回合分叉；OpenCode 可导入本机会话历史。
+- 语音草稿在切换会话后保留，工具卡片支持合并、简洁和详细三种样式。
+- `hapi usage` 与 `/api/activity` 提供持久化的智能体工作及等待时长，和 token 用量统计分开；Hub 数据库升级至 v28，升级前应备份 `HAPI_HOME`。
+- 构建要求 Bun 1.4.4；npm 启动器会拒绝版本不一致的平台包，并提供指定版本的重装命令。
+- 保留个人二开的文本上下文恢复、图片压缩配置与草稿预处理状态、双 Esc 中断、DSH 扩展和 vivo 推送；Android 图片压缩设置仍位于“通用”子页。
+
+## 0.31.2-youngfine.1 更新内容
+
+### 网页功能与体验入口
+
+| 更新 | 如何体验 |
+|------|----------|
+| 终端内容转给 Agent | 打开会话的“终端”，点击“发送给 Agent”，将滚动缓冲追加到聊天草稿；先选中文字则使用“选区发送给 Agent”，回到输入框后可检查内容、补充问题再发送。 |
+| 固定会话顺序 | 开启“设置 → 显示 → 固定会话顺序”，会话和工作区按创建时间排序，新建在前，不随活跃状态重新排列；置顶仍在最上方，开启期间“置顶进行中会话”暂不生效。 |
+| 130% 字号 | 在“设置 → 显示 → 字体大小”选择 `130%`。 |
+| 外部链接在新标签页打开 | 开启“设置 → 显示 → 链接 → 在新标签页中打开外部链接”。 |
+| 语音输入快捷键 | 语音功能可用时，按 `Ctrl/Cmd+Shift+D` 启停语音输入；收起状态下输入框的主语音/发送按钮也扩大了点击区域。 |
+| 粘贴普通文件 | 将剪贴板中的文件直接粘贴到输入框作为附件，也支持非图片文件。 |
+| 输入框撤销与重做 | 输入、粘贴或插入会话引用后使用编辑器的撤销/重做快捷键，输入框现在维护独立的编辑历史。 |
+
+### 智能体与稳定性
+
+- **Codex**：权限选项新增 **Auto**（`autoReview`），保留工作区写入沙箱，将提权请求交给 Codex 原生自动审核；已完成回合的耗时在刷新后保留，自动压缩上下文时显示状态，共享 WebSocket 支持更大的历史记录；详见[共享 Codex 会话](docs/guide/codex-shared-sessions.md)。
+- **DeepSeek Harness**：通过 ACP 配置选项支持新建会话和运行中会话的模型选择，默认入口改为官方 `dsh --profile acp`。
+- **Kimi 与 OpenCode**：Kimi 动态发现实际配置的模型，OpenCode 同时支持 v1 和 v2 会话；详见[支持的智能体](docs/guide/agents.md)。
+- **聊天与 Hub**：改善图片预览稳定性、附件即时移除、页面转入后台时保存草稿、侧边栏渲染，以及会话枚举和配置读取的缓存。
+- **Android 源码**：新增会话日期范围筛选、按机器和智能体记住新建会话配置，以及草稿夹移动、复制和删除确认；需单独构建并安装新版客户端才能体验这些原生功能，详见 [Android](android/README.md)。
 
 ## 我的改动
+
+### 0.31.2-youngfine.1：附件恢复与 DSH 集成
+
+- 文本上下文上传失败后保留弹窗中可编辑的内容；粘贴文本自动转附件失败时，在当前选区恢复原文并保留会话引用，同时移除失败附件，避免重试时重复添加。
+- 图片草稿在刷新、会话恢复和草稿夹迁移后保留上传预处理结果，包括无需转换而保留原图的情况，避免恢复同一草稿时反复压缩图片。
+- 合入上游时保留个人二开的 DSH MCP 注入、工具/思考/用量流式更新，以及 ACP 会话清理改动。
 
 ### 0.30.7-youngfine.5：构建隐私与双语文档
 
@@ -62,12 +102,14 @@ Hub 可在实际使用的 `HAPI_HOME/settings.json`（默认 `~/.hapi/settings.j
 ## 使用
 
 ```bash
-npm install -g @youngfine/hapi --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.31.2-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```
 
 仍支持 `hapi server` 作为别名。
+
+已有部署应在 Hub 和各 Runner 所在机器安装该版本，保留原有 `HAPI_HOME` 与 `CLI_API_TOKEN`，并通过原有服务管理方式重启 Hub；除非设置了 `HAPI_DISABLE_VERSION_HANDOFF=1`，Runner 通常会在 CLI 二进制更新后自动替换进程，详见[后台服务部署](docs/guide/deployment.md#background-service-deployment)和[安装指南](docs/guide/installation.md)。
 
 使用 `hapi <agent> [options]` 直接启动智能体，例如 `hapi claude` 或 `hapi codex`；脚本必须明确指定智能体，`hapi --help` 可查看命令和支持的智能体。
 
@@ -93,7 +135,7 @@ Cloudflare Tunnel、Tailscale 等自托管方式见[安装指南](docs/guide/ins
 
 ## 源码构建
 
-需要 Bun 1.4.0。
+需要 Bun 1.4.4。
 
 ```bash
 bun install

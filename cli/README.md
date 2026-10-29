@@ -43,6 +43,7 @@ Choose a supported coding agent from your terminal and control its sessions remo
   DSH is remote-only and its ACP server must be configured separately.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
 - `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
+- `hapi usage [--since 24h|7d|<ISO>|<ms>] [--until …] [--json]` - When agents were working across every machine on the hub, from `GET /api/activity`. `--json` prints one `hapi.activity.v1` report for other tools (time trackers); errors go to stderr with exit codes 2 (arguments), 3 (no token or refused), 4 (hub too old), 1 (other).
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
 - `hapi set-mode <session-id-or-prefix> <mode>` - Change the permission mode of an existing session, like the web permission picker. Active sessions switch immediately; inactive ones use it on next resume. An invalid mode prints the modes allowed for that agent.
 
@@ -118,6 +119,8 @@ Both `start` and `start-sync` accept repeatable `--workspace-root <path>` (or `-
 
 - The web `/browse` page surfaces scoped file trees rooted at those paths.
 - The runner refuses `list-directory` and `spawn-session` requests for paths outside the configured roots.
+- The runner can serve read-only file, Git, and ripgrep requests for inactive
+  sessions through its machine-scoped `workspace-file-access` capability.
 - `~` and `~/foo` are expanded.
 
 Omitting the flag keeps manual session spawning unrestricted and leaves the
@@ -280,7 +283,7 @@ Data is stored in `~/.hapi/` (or `$HAPI_HOME`):
 - Cursor Agent CLI installed (`agent` on PATH) for `hapi cursor`. Install: `curl https://cursor.com/install -fsS | bash` (macOS/Linux), `irm 'https://cursor.com/install?win32=true' | iex` (Windows).
 - Grok Build CLI installed (`grok` on PATH) for `hapi grok`. Authenticate with `grok login --device-auth` on headless runner machines, or set `XAI_API_KEY`.
 - OpenCode CLI installed (`opencode` on PATH).
-- Bun 1.4.0 for building from source.
+- Bun 1.4.4 for building from source.
 
 ## Build from source
 
@@ -331,12 +334,33 @@ paths and should not be uploaded without review.
 
 ## Releasing
 
-From the repository root, `bun run release-all <version>` updates the CLI package,
-shared app version, iOS `MARKETING_VERSION` (app and notification extension, all
-configurations), and Android's default `versionName` before building and publishing.
-Use `--dry-run` to preview without changing files or publishing. Native build
-numbers (`CURRENT_PROJECT_VERSION` / `versionCode`) remain managed separately;
+This fork publishes `@youngfine/hapi` and five `@youngfine/hapi-*` platform
+packages. Versions use `<upstream>-youngfine.<revision>`. From the repository
+root, `bun run release-all <version>` updates the CLI, shared, iOS, and Android
+versions, builds and prepares binaries, publishes the platform packages,
+waits for them to become available, then publishes the wrapper and commits,
+tags, and pushes. Actual publishing requires `main`; local npm publishing also
+checks the `youngfine` identity and package write access.
+
+`--publish-npm` skips git operations and requires the version to already match
+`cli/package.json`; `--skip-build` reuses existing binaries. `--dry-run` can run
+on another branch and performs real local build/package validation and
+`npm publish --dry-run`, without uploading packages or pushing git refs.
+It also requires the version to already match. Native build numbers
+(`CURRENT_PROJECT_VERSION` / `versionCode`) remain managed separately;
 Android's `-PhapiVersionName` override is preserved.
+
+`.github/workflows/release-personal-npm.yml` is the manually triggered npm
+publishing workflow and uses Trusted Publishing (OIDC). Each personal package
+must configure `Conanxy/hapi` / `release-personal-npm.yml` as its trusted
+publisher. The tag-triggered `.github/workflows/release.yml` prepares checked,
+signed artifacts and creates the GitHub Release; it does not publish npm packages.
+Already published npm package versions are skipped during retries.
+
+Use Bun 1.4.4, matching the root `package.json` and release workflows. It includes
+the [upstream macOS signing fix](https://github.com/oven-sh/bun/pull/39837).
+The fork also retains package-time Darwin signing and verification, plus
+build-path privacy checks for newly built and reused binaries.
 
 ## Related docs
 

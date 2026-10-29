@@ -1,7 +1,7 @@
 import { useTranslation } from '@/lib/use-translation'
 import { getComposerEnterBehaviorOptions, useComposerEnterBehavior } from '@/hooks/useComposerEnterBehavior'
 import { useComposerEscapeBehavior } from '@/hooks/useComposerEscapeBehavior'
-import { getTerminalToolDisplayModeOptions, useTerminalToolDisplayMode } from '@/hooks/useTerminalToolDisplayMode'
+import { getToolCardDisplayModeOptions, useToolCardDisplayMode } from '@/hooks/useToolCardDisplayMode'
 import { useCodexExplorationCollapse } from '@/hooks/useCodexExplorationCollapse'
 import { useReasoningCollapse } from '@/hooks/useReasoningCollapse'
 import {
@@ -22,6 +22,7 @@ import {
     IMAGE_COMPRESSION_THRESHOLD_OPTIONS,
 } from '@/lib/imageCompression'
 import { useImageCompressionSettings } from '@/hooks/useImageCompressionSettings'
+import { ToolCardDisplayModePreview } from '@/components/settings/ToolCardDisplayModePreview'
 
 function ChatSurfaceColorControl(props: {
     label: string
@@ -58,7 +59,7 @@ export default function SettingsChatPage() {
     const { t } = useTranslation()
     const { composerEnterBehavior, setComposerEnterBehavior } = useComposerEnterBehavior()
     const { composerEscapeBehavior, setComposerEscapeBehavior } = useComposerEscapeBehavior()
-    const { terminalToolDisplayMode, setTerminalToolDisplayMode } = useTerminalToolDisplayMode()
+    const { toolCardDisplayMode, setToolCardDisplayMode } = useToolCardDisplayMode()
     const { codexExplorationCollapsed, setCodexExplorationCollapsed } = useCodexExplorationCollapse()
     const { reasoningCollapsed, setReasoningCollapsed } = useReasoningCollapse()
     const { settings: imageCompression, setSettings: setImageCompression } = useImageCompressionSettings()
@@ -122,16 +123,20 @@ export default function SettingsChatPage() {
             </SettingsSection>
             <SettingsSection title={t('settings.chat.tools')}>
                 <SettingsChoiceGroup
-                    label={t('settings.chat.terminalToolDisplay')}
-                    value={terminalToolDisplayMode}
-                    options={getTerminalToolDisplayModeOptions().map((option) => ({ value: option.value, label: t(option.labelKey) }))}
-                    onChange={setTerminalToolDisplayMode}
-                />
+                    label={t('settings.chat.toolCardDisplay')}
+                    value={toolCardDisplayMode}
+                    options={getToolCardDisplayModeOptions().map((option) => ({ value: option.value, label: t(option.labelKey) }))}
+                    onChange={setToolCardDisplayMode}
+                    columns={3}
+                >
+                    <ToolCardDisplayModePreview mode={toolCardDisplayMode} />
+                </SettingsChoiceGroup>
                 <SettingsSwitch
                     label={t('settings.chat.codexExplorationCollapsed')}
                     description={t('settings.chat.codexExplorationCollapsed.desc')}
                     checked={codexExplorationCollapsed}
                     onChange={setCodexExplorationCollapsed}
+                    disabled={toolCardDisplayMode === 'grouped'}
                 />
                 <SettingsSwitch
                     label={t('settings.chat.reasoningCollapsed')}

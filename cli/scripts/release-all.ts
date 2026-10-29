@@ -27,12 +27,11 @@ const NPM_DIST_TAG = 'latest';
 const VERSION_PATTERN = /^\d+\.\d+\.\d+-youngfine\.\d+$/;
 const platforms = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64'];
 
-// 解析参数
 const args = process.argv.slice(2);
 const version = args.find(arg => !arg.startsWith('--'));
 const dryRun = args.includes('--dry-run');
-const publishNpm = args.includes('--publish-npm');  // 只发布 npm，跳过 git 操作
-const skipBuild = args.includes('--skip-build');    // 跳过构建（二进制已存在）
+const publishNpm = args.includes('--publish-npm');
+const skipBuild = args.includes('--skip-build');
 
 if (!version) {
     console.error('Usage: bun run scripts/release-all.ts <version> [options]');

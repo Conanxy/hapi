@@ -45,24 +45,61 @@ import app.hapi.protocol.wire.SUPPORTED_PROTOCOL_VERSION
 import app.hapi.companion.push.VivoPushSettings
 
 /**
- * Settings home (B-M4e scaffold): Appearance (theme mode + Material You),
- * Language (persist-only until M5), the owner-only Usage/Storage entries, and
- * About (app/protocol versions + hub health).
+ * General subpage of the settings hub (P2 IA): the catch-all category for
+ * everything without a dedicated category on this branch — Appearance (theme
+ * mode + Material You), Language, and About (app/protocol versions + hub
+ * health). The former owner-only Usage/Storage rows moved hub-level (see
+ * [SettingsHubCatalog]); their owner gate is unchanged.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(
+fun SettingsGeneralScreen(
     viewModel: SettingsViewModel,
-    onOpenUsage: () -> Unit,
-    onOpenStorage: () -> Unit,
     onBack: () -> Unit,
 ) {
     val theme by viewModel.themeSettings.collectAsState()
     val language by viewModel.language.collectAsState()
     val imageCompression by viewModel.imageCompression.collectAsState()
-    val isOwner by viewModel.isOwner.collectAsState()
     val hubInfo by viewModel.hubInfo.collectAsState()
 
+    SettingsGeneralContent(
+        theme = theme,
+        language = language,
+        hubUrl = viewModel.hubUrl,
+        hubInfo = hubInfo,
+        imageCompression = imageCompression,
+        onSetThemeMode = viewModel::setThemeMode,
+        onSetDynamicColor = viewModel::setDynamicColor,
+        onSetLanguage = viewModel::setLanguage,
+        onRetryHubInfo = viewModel::retryHubInfo,
+        onSetImageCompressionEnabled = viewModel::setImageCompressionEnabled,
+        onSetImageCompressionThreshold = viewModel::setImageCompressionThreshold,
+        onSetImageCompressionDimension = viewModel::setImageCompressionDimension,
+        onSetImageCompressionQuality = viewModel::setImageCompressionQuality,
+        pushSettings = { VivoPushSettings() },
+        onBack = onBack,
+    )
+}
+
+/** State-injected body of [SettingsGeneralScreen] — previewable without a VM. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsGeneralContent(
+    theme: ThemeSettings,
+    language: AppLanguage,
+    hubUrl: String,
+    hubInfo: HubInfoState,
+    imageCompression: ImageCompressionSettings,
+    onSetThemeMode: (ThemeMode) -> Unit,
+    onSetDynamicColor: (Boolean) -> Unit,
+    onSetLanguage: (AppLanguage) -> Unit,
+    onRetryHubInfo: () -> Unit,
+    onSetImageCompressionEnabled: (Boolean) -> Unit,
+    onSetImageCompressionThreshold: (Long) -> Unit,
+    onSetImageCompressionDimension: (Int) -> Unit,
+    onSetImageCompressionQuality: (Int) -> Unit,
+    pushSettings: @Composable () -> Unit,
+    onBack: () -> Unit,
+) {
     var showThemeDialog by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var showImageThresholdDialog by rememberSaveable { mutableStateOf(false) }
@@ -72,7 +109,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
+                title = { Text(stringResource(R.string.settings_category_general)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -108,7 +145,7 @@ fun SettingsScreen(
                         ),
                         checked = theme.dynamicColor && theme.mode != ThemeMode.OLED,
                         enabled = theme.mode != ThemeMode.OLED,
-                        onCheckedChange = viewModel::setDynamicColor,
+                        onCheckedChange = onSetDynamicColor,
                     )
                 }
             }
@@ -127,7 +164,7 @@ fun SettingsScreen(
                     description = stringResource(R.string.settings_image_compression_enabled_description),
                     checked = imageCompression.enabled,
                     enabled = true,
-                    onCheckedChange = viewModel::setImageCompressionEnabled,
+                    onCheckedChange = onSetImageCompressionEnabled,
                 )
                 SettingsDivider()
                 SettingsRow(
@@ -161,23 +198,7 @@ fun SettingsScreen(
                 )
             }
 
-            VivoPushSettings()
-
-            if (isOwner) {
-                SettingsSection(title = stringResource(R.string.settings_section_insights)) {
-                    SettingsRow(
-                        label = stringResource(R.string.settings_usage),
-                        description = stringResource(R.string.settings_usage_summary),
-                        onClick = onOpenUsage,
-                    )
-                    SettingsDivider()
-                    SettingsRow(
-                        label = stringResource(R.string.settings_storage),
-                        description = stringResource(R.string.settings_storage_summary),
-                        onClick = onOpenStorage,
-                    )
-                }
-            }
+            pushSettings()
 
             SettingsSection(title = stringResource(R.string.settings_section_about)) {
                 SettingsRow(
@@ -192,7 +213,7 @@ fun SettingsScreen(
                 SettingsDivider()
                 SettingsRow(
                     label = stringResource(R.string.settings_hub),
-                    value = viewModel.hubUrl,
+                    value = hubUrl,
                     description = when (val info = hubInfo) {
                         is HubInfoState.Loading -> stringResource(R.string.settings_hub_checking)
                         is HubInfoState.Loaded -> stringResource(
@@ -202,7 +223,7 @@ fun SettingsScreen(
                         )
                         is HubInfoState.Failed -> stringResource(R.string.settings_hub_unreachable)
                     },
-                    onClick = if (hubInfo is HubInfoState.Failed) viewModel::retryHubInfo else null,
+                    onClick = if (hubInfo is HubInfoState.Failed) onRetryHubInfo else null,
                 )
                 SettingsDivider()
                 app.hapi.companion.ui.components.PrivacyPolicyLink()
@@ -215,7 +236,7 @@ fun SettingsScreen(
             selected = theme.mode,
             onSelect = { mode ->
                 showThemeDialog = false
-                viewModel.setThemeMode(mode)
+                onSetThemeMode(mode)
             },
             onDismiss = { showThemeDialog = false },
         )
@@ -226,7 +247,7 @@ fun SettingsScreen(
             selected = language,
             onSelect = { choice ->
                 showLanguageDialog = false
-                viewModel.setLanguage(choice)
+                onSetLanguage(choice)
                 // Apply immediately (B-M5a): appcompat recreates the activity
                 // with the new locale and, thanks to autoStoreLocales in the
                 // manifest, re-applies it on every cold start. The DataStore
@@ -247,7 +268,7 @@ fun SettingsScreen(
             label = ::imageThresholdLabel,
             onSelect = {
                 showImageThresholdDialog = false
-                viewModel.setImageCompressionThreshold(it)
+                onSetImageCompressionThreshold(it)
             },
             onDismiss = { showImageThresholdDialog = false },
         )
@@ -261,7 +282,7 @@ fun SettingsScreen(
             label = { "$it px" },
             onSelect = {
                 showImageDimensionDialog = false
-                viewModel.setImageCompressionDimension(it)
+                onSetImageCompressionDimension(it)
             },
             onDismiss = { showImageDimensionDialog = false },
         )
@@ -275,7 +296,7 @@ fun SettingsScreen(
             label = { it.toString() },
             onSelect = {
                 showImageQualityDialog = false
-                viewModel.setImageCompressionQuality(it)
+                onSetImageCompressionQuality(it)
             },
             onDismiss = { showImageQualityDialog = false },
         )

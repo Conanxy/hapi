@@ -7,7 +7,7 @@ export type CodexPermissionModeConfig = {
     sandboxPolicy: SandboxPolicy;
 };
 
-export type SharedCodexPermissionMode = Exclude<CodexPermissionMode, 'safe-yolo'>;
+export type SharedCodexPermissionMode = CodexPermissionMode;
 
 /**
  * Native shared Codex (app-server 0.154+) has no HAPI Safe Yolo.
@@ -15,7 +15,7 @@ export type SharedCodexPermissionMode = Exclude<CodexPermissionMode, 'safe-yolo'
  * uses the same native approval/sandbox policy.
  */
 export function toSharedCodexPermissionMode(
-    mode: CodexPermissionMode | undefined
+    mode: CodexPermissionMode | 'safe-yolo' | undefined
 ): SharedCodexPermissionMode | undefined {
     if (!mode) {
         return undefined;
@@ -40,15 +40,6 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
                 approvalPolicy: 'never',
                 sandbox: 'read-only',
                 sandboxPolicy: { type: 'readOnly' }
-            };
-        case 'safe-yolo':
-            return {
-                // Current Codex versions reject the removed `on-failure` policy. Keep
-                // escalation available through `on-request`; HAPI auto-approves these
-                // requests in safe-yolo mode.
-                approvalPolicy: 'on-request',
-                sandbox: 'workspace-write',
-                sandboxPolicy: { type: 'workspaceWrite' }
             };
         case 'yolo':
             return {

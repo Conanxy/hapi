@@ -10,7 +10,8 @@ import type { CodexAppServerClient } from '../codexAppServerClient';
 export const SharedLaunchSchema = z.object({
     startedBy: z.enum(['runner', 'terminal']).optional(),
     codexArgs: z.array(z.string()).optional(),
-    permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'autoReview', 'yolo']).optional(),
+    permissionMode: z.enum(['default', 'read-only', 'safe-yolo', 'autoReview', 'yolo'])
+        .transform(toSharedCodexPermissionMode).optional(),
     resumeSessionId: z.string().optional(), resumeLast: z.boolean().optional(), resumeAll: z.boolean().optional(),
     existingSessionId: z.string().optional(),
     /** Hub-preallocated stub — create/adopt, not reopen. */
@@ -19,7 +20,7 @@ export const SharedLaunchSchema = z.object({
     serviceTier: z.string().optional(), collaborationMode: z.enum(['default', 'plan']).optional(),
     workingDirectory: z.string().optional()
 });
-export type SharedLaunchOptions = z.infer<typeof SharedLaunchSchema>;
+export type SharedLaunchOptions = z.input<typeof SharedLaunchSchema>;
 
 /**
  * Take the machine-spawn reservation for one create-path prepare().

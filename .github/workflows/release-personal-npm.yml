@@ -16,7 +16,7 @@ jobs:
     publish:
         if: github.ref_name == 'main'
         # Darwin binaries must be ad-hoc signed with Apple's codesign before
-        # publish. Bun 1.4.0 compile signatures are rejected on macOS 27.
+        # publish, including artifacts built with an older Bun toolchain.
         runs-on: macos-latest
         steps:
             - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
                   registry-url: 'https://registry.npmjs.org'
             - uses: oven-sh/setup-bun@v2
               with:
-                  bun-version: 1.4.0
+                  bun-version: 1.4.4
             - run: npm install --global npm@11.6.2
             - run: bun install --frozen-lockfile
             - name: Verify version

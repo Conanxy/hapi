@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sharedLaunchConfig, takeReservedSessionId } from './launch';
+import { SharedLaunchSchema, sharedLaunchConfig, takeReservedSessionId } from './launch';
 import { parseCodexCliOverrides } from '../utils/codexCliOverrides';
 import { resolveCodexPermissionModeConfig } from '../utils/permissionModeConfig';
 
@@ -47,10 +47,15 @@ describe('shared launch configuration', () => {
         expect(sharedLaunchConfig({ codexArgs: ['--', '-C', 'literal'] }, '/tmp').tuiArgs).toEqual(['--', '-C', 'literal']);
     });
     it('maps archived Safe Yolo to default instead of aborting shared resume', () => {
+        expect(SharedLaunchSchema.parse({ permissionMode: 'safe-yolo' }).permissionMode).toBe('default');
+        expect(SharedLaunchSchema.parse({})).not.toHaveProperty('permissionMode');
         const remapped = sharedLaunchConfig({ permissionMode: 'safe-yolo' }, '/tmp');
         const native = sharedLaunchConfig({ permissionMode: 'default' }, '/tmp');
         expect(remapped.threadParams).toEqual(native.threadParams);
         expect(remapped.serverArgs).toEqual(native.serverArgs);
+        expect(remapped.threadParams).toMatchObject({
+            approvalPolicy: 'on-request', approvalsReviewer: 'user', sandbox: 'workspace-write'
+        });
     });
     it('maps HAPI autoReview to native auto-review in the workspace-write sandbox', () => {
         const result = sharedLaunchConfig({ permissionMode: 'autoReview', codexArgs: ['--yolo'] }, '/tmp');

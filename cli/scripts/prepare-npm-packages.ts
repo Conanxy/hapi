@@ -203,9 +203,8 @@ export async function preparePlatform(
     }
     console.log(`Copied: ${srcBin} -> ${destBin}`);
 
-    // Bun 1.4.0 compile artifacts fail macOS 27 code-signing checks until
-    // Apple's codesign rewrites the ad-hoc signature. Do this at package-prep
-    // time so npm never publishes a binary that dies with SIGKILL.
+    // Verify and refresh Darwin signatures before packaging, including
+    // artifacts produced by older Bun versions on a separate build machine.
     if (isDarwinPlatformPackage(platform.name)) {
         signDarwinNpmBinary(destBin);
         console.log(`Signed: ${destBin}`);

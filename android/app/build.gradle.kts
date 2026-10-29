@@ -86,7 +86,7 @@ android {
             value.toInt().also { require(it > 0) { "hapiVersionCode must be positive" } }
         }.orElse(1).get()
         // Tracks the hapi CLI/hub release train.
-        versionName = providers.gradleProperty("hapiVersionName").orElse("0.31.2-youngfine.1").get()
+        versionName = providers.gradleProperty("hapiVersionName").orElse("0.33.1-youngfine.1").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VIVO_PUSH_CONFIGURED", (vivoAppId.isNotEmpty()).toString())
         manifestPlaceholders["vivoAppId"] = vivoAppId

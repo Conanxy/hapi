@@ -8,11 +8,52 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Current personal release: `@youngfine/hapi@0.30.7-youngfine.5`.
-- Based on upstream `v0.30.7`, commit `0239edf3`, retaining its Web, CLI, Hub, Android, and iOS capabilities alongside the custom changes below.
-- The upstream refs fetched and checked on `2026-10-13` showed `v0.30.7` as the latest version tag. Upstream `main` has additional development commits that are not included in this release; this fork is not synchronized with the latest upstream `main`.
+- Current personal release: `@youngfine/hapi@0.31.2-youngfine.1`, published on `2026-10-27`.
+- Integrated upstream tag `v0.31.2`, commit `7bf0e5bc`, on `2026-10-27`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
+- Published the npm wrapper and five platform packages: macOS ARM64/x64, Linux ARM64/x64, and Windows x64. They include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; this release does not include an APK or an iOS app build.
+
+## 0.33.1 Integration Candidate (Unpublished)
+
+The source candidate `0.33.1-youngfine.1` integrates upstream `v0.33.1`
+(`a6cf8fd0`). The published version and installation command below remain
+`0.31.2-youngfine.1` until the candidate is released.
+
+- Sessions can open in separate windows, and manually chosen titles can be locked.
+- Codex can fork historical turns while a later turn is running; OpenCode can import local session history.
+- Voice drafts persist across session navigation, and tool cards support combined, compact, and detailed display.
+- `hapi usage` and `/api/activity` expose persisted agent work and wait times. These activity metrics are separate from token usage. The Hub database schema advances to v28; back up `HAPI_HOME` before upgrading.
+- Bun 1.4.4 is required for builds. The npm launcher rejects mismatched platform packages and offers version-pinned reinstall commands.
+- The fork retains text-context recovery, image compression preferences and draft preparation state, double-Esc interruption, DSH extensions, and opt-in vivo push. Existing native compression controls remain on Android's General settings subpage.
+
+## What's New in 0.31.2-youngfine.1
+
+### Web Features to Try
+
+| Update | Where to try it |
+|--------|-----------------|
+| Terminal output to Agent | Open a session's **Terminal**, then choose **To agent** to append the scrollback to the chat draft. Select text first to use **Selection to agent** instead. Review the draft and add a question before sending. |
+| Fixed session order | Enable **Settings > Display > Fixed session order**. Sessions and workspaces stay ordered by creation time, newest first, instead of moving with activity. Pins remain at the top; pinning in-progress sessions is suspended while this setting is on. |
+| 130% font size | Select **130%** in **Settings > Display > Font size**. |
+| External links in a new tab | Enable **Settings > Display > Links > Open external links in a new tab**. |
+| Dictation shortcut | Use **Ctrl/Cmd+Shift+D** to start or stop voice input when voice is available. The collapsed composer's primary voice/send control also has a larger hit target. |
+| Paste ordinary files | Paste clipboard files into the composer as attachments, including non-image files. |
+| Composer undo and redo | Use the editor's undo/redo shortcuts after typing, pasting, or inserting session mentions; the composer now maintains its own edit history. |
+
+### Agents and Reliability
+
+- **Codex:** Added **Auto** (`autoReview`) to the permission picker. It retains the workspace-write sandbox and routes escalation requests to Codex's native auto-review. Completed round durations survive reloads, automatic context compaction has a visible status, and shared WebSockets support larger histories. See [shared Codex sessions](docs/guide/codex-shared-sessions.md).
+- **DeepSeek Harness:** Added model selection for new sessions and running sessions through ACP configuration options, with the official `dsh --profile acp` entrypoint as the default.
+- **Kimi and OpenCode:** Kimi discovers configured models dynamically; OpenCode supports both v1 and v2 sessions. See [supported agents](docs/guide/agents.md).
+- **Chat and Hub:** Improved image-preview stability, immediate attachment removal, draft saving when the page becomes hidden, sidebar rendering, and caching for session enumeration and settings.
+- **Android source:** Added session date-range filtering, per-machine/per-agent launch defaults, and scratchlist move, copy, and delete-confirm actions. Build and install an updated client separately to use these native features; see [Android](android/README.md).
 
 ## Custom Changes
+
+### 0.31.2-youngfine.1: Attachment Recovery and DSH Integration
+
+- Failed text-context uploads keep the dialog's editable fields. If automatic conversion of pasted text fails, the text is restored at the current selection while preserving session mentions; failed attachment chips are removed so retries do not duplicate them.
+- Image drafts retain their upload-preparation decision across reloads, session resume, and scratchlist migration, including when preparation keeps the original image. Restoring the same draft does not repeatedly compress the image.
+- Preserved the fork's DSH MCP injection, streamed tool/reasoning/usage updates, and ACP session cleanup changes during the upstream integration.
 
 ### 0.30.7-youngfine.5: Build Privacy and Bilingual Documentation
 
@@ -62,18 +103,23 @@ Using this vivo integration requires Hub `.4` and the corresponding Android APK.
 ## Usage
 
 ```bash
-npm install -g @youngfine/hapi --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.31.2-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```
 
 `hapi server` remains supported as an alias.
 
+For an existing deployment, install this version on the Hub and each Runner machine, preserve the existing `HAPI_HOME` and `CLI_API_TOKEN`, and restart the Hub through its existing service manager. Runners normally replace themselves after the CLI binary changes unless `HAPI_DISABLE_VERSION_HANDOFF=1`; see [background service deployment](docs/guide/deployment.md#background-service-deployment) and [installation](docs/guide/installation.md).
+
 Use `hapi <agent> [options]` to start an agent directly, for example `hapi claude`
 or `hapi codex`. Scripts must specify the agent explicitly. `hapi --help` shows
 HAPI's commands and supported agents.
 
-The hub displays a URL and two QR codes. Open the web URL in a browser, or pair a native app using the companion QR. See [Native apps](docs/guide/native-apps.md) for build and pairing instructions.
+The hub displays a URL and two QR codes. Then connect a client:
+
+- **Web / PWA (free):** open the web URL in a browser, or scan the web QR code. [Install it as a PWA](docs/guide/pwa.md) for a home-screen app and push notifications.
+- **Native apps (paid):** install HAPI from the [App Store](https://apps.apple.com/app/id6805699104) or [Google Play](https://play.google.com/store/apps/details?id=run.hapi.companion), then scan the companion QR. See [Native apps](docs/guide/native-apps.md) for pairing.
 
 > The relay uses WireGuard + TLS for end-to-end encryption. Your data is encrypted from your device to your machine.
 
@@ -89,13 +135,19 @@ For self-hosted options (Cloudflare Tunnel, Tailscale), see [Installation](docs/
 - [Why HAPI](docs/guide/why-hapi.md)
 - [FAQ](docs/guide/faq.md)
 
-## Native Apps (iOS / Android)
+## Clients
 
-The repository includes SwiftUI/UIKit and Kotlin Compose clients with chat, approvals, session creation, files, dictation, and push notifications. See the [native app guide](docs/guide/native-apps.md) for capabilities, platform differences, and pairing. Build instructions: [iOS](ios/README.md) and [Android](android/README.md). Developer protocol: [client contract](docs/api/client-contract/index.md).
+- **Web / PWA (free)** - The full-featured web app, including the remote terminal and voice assistant. Works in any browser and installs as a PWA. See [Web / PWA](docs/guide/pwa.md).
+- **Native iOS / Android apps (paid)** - SwiftUI/UIKit and Kotlin Compose clients with chat, approvals, session creation, files, dictation, and native push notifications. See the [native app guide](docs/guide/native-apps.md) for capabilities and pairing.
+
+<a href="https://apps.apple.com/app/id6805699104"><img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" height="48"></a>
+<a href="https://play.google.com/store/apps/details?id=run.hapi.companion"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="72"></a>
+
+Developers can build the apps from source: [iOS](ios/README.md), [Android](android/README.md). Protocol: [client contract](docs/api/client-contract/index.md).
 
 ## Build from Source
 
-Requires Bun 1.4.0.
+Requires Bun 1.4.4.
 
 ```bash
 bun install
