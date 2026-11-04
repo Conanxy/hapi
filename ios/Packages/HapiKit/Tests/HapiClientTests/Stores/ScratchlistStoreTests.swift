@@ -468,6 +468,29 @@ struct ScratchlistStoreTests {
         let count = await performer.requestCount
         #expect(count == 2)
     }
+
+    @Test func freshLimitsRefetchAndNeverUseCachedOrDefaultValuesOnFailure() async throws {
+        let performer = ScratchlistPerformer()
+        let store = try makeScratchlistStore(performer)
+        await performer.enqueue(
+            json: "{\"limits\":{\"maxBytesPerFile\":1024,\"maxAttachmentsPerEntry\":2,"
+                + "\"maxBytesPerEntry\":2048,\"maxBytesPerSession\":4096,\"allowedMimeTypes\":[\"image/jpeg\"]}}"
+        )
+        let first = await store.freshLimits(sessionId: "s1")
+        #expect(first?.allowedMimeTypes == ["image/jpeg"])
+
+        await performer.enqueue(
+            json: "{\"limits\":{\"maxBytesPerFile\":1024,\"maxAttachmentsPerEntry\":2,"
+                + "\"maxBytesPerEntry\":2048,\"maxBytesPerSession\":4096,\"allowedMimeTypes\":[\"image/png\"]}}"
+        )
+        let changed = await store.freshLimits(sessionId: "s1")
+        #expect(changed?.allowedMimeTypes == ["image/png"])
+
+        await performer.enqueue(status: 500, json: "{\"error\":\"offline\"}")
+        let unavailable = await store.freshLimits(sessionId: "s1")
+        #expect(unavailable == nil)
+        #expect(await performer.requestCount == 3)
+    }
 }
 
 /// Reference box for capturing values in `@MainActor` test callbacks.

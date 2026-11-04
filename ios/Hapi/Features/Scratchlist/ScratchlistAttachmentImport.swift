@@ -27,21 +27,41 @@ enum ScratchlistAttachmentImport {
     private static let minDimension: CGFloat = 64
     private static let qualitySteps: [CGFloat] = [0.9, 0.8, 0.7, 0.6, 0.5]
 
+    static func allowsJPEG(_ limits: ScratchlistAttachmentLimits?) -> Bool {
+        limits?.allowedMimeTypes.contains { $0.lowercased() == "image/jpeg" } == true
+    }
+
+    static func compressionSettings(
+        _ settings: ImageCompressionSettings,
+        limits: ScratchlistAttachmentLimits?
+    ) -> ImageCompressionSettings {
+        guard !allowsJPEG(limits) else { return settings }
+        return ImageCompressionSettings(
+            enabled: false,
+            thresholdBytes: settings.thresholdBytes,
+            maxDimension: settings.maxDimension,
+            jpegQuality: settings.jpegQuality
+        )
+    }
+
     static func prepare(
         data: Data,
         filename: String,
         mimeType: String,
         existing: [ScratchlistAttachment],
-        limits: ScratchlistAttachmentLimits
+        limits: ScratchlistAttachmentLimits?
     ) -> Outcome {
         var data = data
-        var mimeType = mimeType
+        var mimeType = mimeType.lowercased()
         var filename = filename
+        var effectiveLimits = limits ?? .defaultLimits
+        effectiveLimits.allowedMimeTypes = effectiveLimits.allowedMimeTypes.map { $0.lowercased() }
         // iOS divergence from the Android importer: PhotosPicker commonly
         // hands back HEIC, which the hub's allow-list rejects — transcode
         // any decodable but disallowed raster image to JPEG before the guard
         // so camera-roll photos work at all.
-        if !limits.allowedMimeTypes.contains(mimeType),
+        if !effectiveLimits.allowedMimeTypes.contains(mimeType),
+           allowsJPEG(limits),
            mimeType.hasPrefix("image/"),
            let image = UIImage(data: data),
            let jpeg = image.jpegData(compressionQuality: 0.9) {
@@ -54,17 +74,17 @@ enum ScratchlistAttachmentImport {
             sizeBytes: data.count,
             mimeType: mimeType,
             existing: existing,
-            limits: limits
+            limits: effectiveLimits
         ) {
         case .fits:
             return .ready(Prepared(filename: filename, data: data, mimeType: mimeType))
         case .downscale(let targetBytes):
-            guard let compressed = downscaleToJPEG(data, targetBytes: targetBytes) else {
+            guard allowsJPEG(limits), let compressed = downscaleToJPEG(data, targetBytes: targetBytes) else {
                 return .rejected(message: String(localized: "Image is too large even after compression"))
             }
             return .ready(Prepared(filename: jpegName(filename), data: compressed, mimeType: "image/jpeg"))
         case .reject(let reason):
-            return .rejected(message: rejectionMessage(reason, limits: limits))
+            return .rejected(message: rejectionMessage(reason, limits: effectiveLimits))
         }
     }
 

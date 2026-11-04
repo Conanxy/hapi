@@ -128,8 +128,8 @@ interface SessionScratchlist {
 
     suspend fun deleteAttachment(sessionId: String, attachmentId: String): ScratchlistAttachmentDeleteResult
 
-    /** Hub attachment budgets, cached after the first success; defaults offline. */
-    suspend fun limits(sessionId: String): ScratchlistAttachmentLimits
+    /** Current hub attachment budgets; null when unavailable. */
+    suspend fun limits(sessionId: String): ScratchlistAttachmentLimits?
 }
 
 /**
@@ -173,9 +173,6 @@ class ScratchlistStore(
 
     /** Optimistic-create entry ids whose POST has not settled (refresh keeps them). */
     private val pendingCreates = ConcurrentHashMap.newKeySet<String>()
-
-    @Volatile
-    private var cachedLimits: ScratchlistAttachmentLimits? = null
 
     init {
         if (invalidations != null) {
@@ -430,13 +427,12 @@ class ScratchlistStore(
         }
     }
 
-    override suspend fun limits(sessionId: String): ScratchlistAttachmentLimits {
-        cachedLimits?.let { return it }
+    override suspend fun limits(sessionId: String): ScratchlistAttachmentLimits? {
         return try {
-            api.getScratchlistLimits(sessionId).limits.also { cachedLimits = it }
+            api.getScratchlistLimits(sessionId).limits
         } catch (error: Exception) {
             if (error is CancellationException) throw error
-            ScratchlistAttachmentLimits.DEFAULT
+            null
         }
     }
 

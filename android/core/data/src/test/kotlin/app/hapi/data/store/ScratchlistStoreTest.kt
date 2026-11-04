@@ -1,11 +1,11 @@
 package app.hapi.data.store
 
-import app.hapi.protocol.wire.ScratchlistAttachmentLimits
 import app.hapi.protocol.wire.ScratchlistErrorCodes
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -371,21 +371,24 @@ class ScratchlistStoreTest {
     }
 
     @Test
-    fun `limits default offline and cache after the first success`() =
+    fun `limits are unknown offline and refreshed for every import`() =
         runScratchlistTest { store, server ->
             server.enqueueJson("""{"error":"boom"}""", code = 500)
-            assertEquals(ScratchlistAttachmentLimits.DEFAULT, store.limits("s1"))
+            assertNull(store.limits("s1"))
 
             server.enqueueJson(
                 """{"limits":{"maxBytesPerFile":1024,"maxAttachmentsPerEntry":2,""" +
                     """"maxBytesPerEntry":2048,"maxBytesPerSession":4096,"allowedMimeTypes":["image/png"]}}"""
             )
-            val fetched = store.limits("s1")
+            val fetched = requireNotNull(store.limits("s1"))
             assertEquals(1024, fetched.maxBytesPerFile)
             assertEquals(listOf("image/png"), fetched.allowedMimeTypes)
 
-            // Third call answers from the cache — no further request.
+            server.enqueueJson(
+                """{"limits":{"maxBytesPerFile":1024,"maxAttachmentsPerEntry":2,""" +
+                    """"maxBytesPerEntry":2048,"maxBytesPerSession":4096,"allowedMimeTypes":["image/png"]}}"""
+            )
             assertEquals(fetched, store.limits("s1"))
-            assertEquals(2, server.requestCount)
+            assertEquals(3, server.requestCount)
         }
 }

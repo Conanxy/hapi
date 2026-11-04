@@ -176,24 +176,33 @@ final class ScratchlistScreenModel {
             let type = item.supportedContentTypes.first
             let filename = "photo-\(UUID().uuidString).\(type?.preferredFilenameExtension ?? "jpg")"
             let mimeType = type?.preferredMIMEType ?? "image/jpeg"
-            switch await AttachmentPreparer.prepare(
+            let limits = await store.freshLimits(sessionId: sessionId)
+            guard editor?.id == draft.id else { return }
+            let result = await AttachmentPreparer.prepare(
                 data: data,
                 filename: filename,
                 mimeType: mimeType,
-                settings: compressionSettings
-            ) {
-            case .ready(let prepared):
-                await importAttachment(
-                    data: prepared.bytes,
-                    filename: prepared.filename,
-                    mimeType: prepared.mimeType,
-                    draft: draft
-                )
-            case .tooLarge(let filename, _):
-                finishImport(id: draft.id, error: String(format: String(localized: "%@ is over the 50 MB upload limit"), filename))
-            case .unreadable(let filename):
-                finishImport(id: draft.id, error: String(format: String(localized: "Couldn't read %@"), filename))
-            }
+                settings: ScratchlistAttachmentImport.compressionSettings(compressionSettings, limits: limits)
+            )
+            await handlePrepared(result, draft: draft, limits: limits)
+        }
+    }
+
+    func addFileAttachment(
+        _ url: URL,
+        compressionSettings: ImageCompressionSettings = .default
+    ) {
+        guard let draft = editor, !draft.isUploading, !draft.isSaving, draft.failedUploadName == nil else { return }
+        editor?.isUploading = true
+        editor?.error = nil
+        Task {
+            let limits = await store.freshLimits(sessionId: sessionId)
+            guard editor?.id == draft.id else { return }
+            let result = await AttachmentPreparer.prepare(
+                fileURL: url,
+                settings: ScratchlistAttachmentImport.compressionSettings(compressionSettings, limits: limits)
+            )
+            await handlePrepared(result, draft: draft, limits: limits)
         }
     }
 
@@ -202,12 +211,36 @@ final class ScratchlistScreenModel {
         editor?.isUploading = true
         editor?.error = nil
         Task {
-            await importAttachment(data: attachment.bytes, filename: attachment.filename, mimeType: attachment.mimeType, draft: draft)
+            let limits = await store.freshLimits(sessionId: sessionId)
+            await importAttachment(data: attachment.bytes, filename: attachment.filename, mimeType: attachment.mimeType,
+                draft: draft, limits: limits)
         }
     }
 
-    private func importAttachment(data: Data, filename: String, mimeType: String, draft: ScratchlistEditorState) async {
-        let limits = await store.limits(sessionId: sessionId)
+    private func handlePrepared(
+        _ result: PrepareResult,
+        draft: ScratchlistEditorState,
+        limits: ScratchlistAttachmentLimits?
+    ) async {
+        guard editor?.id == draft.id else { return }
+        switch result {
+        case .ready(let prepared):
+            await importAttachment(data: prepared.bytes, filename: prepared.filename, mimeType: prepared.mimeType,
+                draft: draft, limits: limits)
+        case .tooLarge(let filename, _):
+            finishImport(id: draft.id, error: String(format: String(localized: "%@ is over the 50 MB upload limit"), filename))
+        case .unreadable(let filename):
+            finishImport(id: draft.id, error: String(format: String(localized: "Couldn't read %@"), filename))
+        }
+    }
+
+    private func importAttachment(
+        data: Data,
+        filename: String,
+        mimeType: String,
+        draft: ScratchlistEditorState,
+        limits: ScratchlistAttachmentLimits?
+    ) async {
         guard editor?.id == draft.id else { return }
         let outcome = await Task.detached(priority: .userInitiated) {
             ScratchlistAttachmentImport.prepare(data: data, filename: filename, mimeType: mimeType,

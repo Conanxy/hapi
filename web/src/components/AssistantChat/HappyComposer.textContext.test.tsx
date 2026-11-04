@@ -5,7 +5,7 @@ import {
     type ChatModelAdapter,
     useLocalRuntime,
 } from '@assistant-ui/react'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createAttachmentAdapter } from '@/lib/attachmentAdapter'
 import { addTextContextAttachment, createTextContextFile } from '@/lib/textContext'
@@ -23,8 +23,8 @@ vi.mock('@/hooks/usePWAInstall', () => ({
 }))
 vi.mock('@/components/AssistantChat/StatusBar', () => ({ StatusBar: () => null }))
 vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
-    ComposerButtons: (props: { onTextContext: () => void }) => (
-        <button type="button" onClick={props.onTextContext}>Text context</button>
+    ComposerButtons: (props: { onTextContext: () => void; textContextDisabled?: boolean }) => (
+        <button type="button" disabled={props.textContextDisabled} onClick={props.onTextContext}>Text context</button>
     ),
     UnifiedButton: () => null,
     isComposerPrimaryFillHeight: () => true,
@@ -33,14 +33,14 @@ vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
 const model: ChatModelAdapter = { async *run() {} }
 const pastedText = 'long context\n'.repeat(300)
 
-function setup(attachmentAdapter: AttachmentAdapter, initialText = '') {
+function setup(attachmentAdapter?: AttachmentAdapter, initialText = '', attachmentsEnabled = true) {
     const runtimeRef: { current?: AssistantRuntime } = {}
     function Harness() {
-        const runtime = useLocalRuntime(model, { adapters: { attachments: attachmentAdapter } })
+        const runtime = useLocalRuntime(model, attachmentAdapter ? { adapters: { attachments: attachmentAdapter } } : undefined)
         runtimeRef.current = runtime
         return (
             <AssistantRuntimeProvider runtime={runtime}>
-                <I18nProvider><HappyComposer /></I18nProvider>
+                <I18nProvider><HappyComposer attachmentsEnabled={attachmentsEnabled} /></I18nProvider>
             </AssistantRuntimeProvider>
         )
     }
@@ -173,6 +173,45 @@ describe('text context upload recovery with the real attachment runtime', () => 
         await waitFor(() => expect(composer.getState().attachments[0]?.status.type).toBe('requires-action'))
         expect(composer.getState().attachments).toHaveLength(1)
         expect(composer.getState().text).toBe('request')
+    })
+
+    it('disables text context and pastes long text directly without an attachment adapter', async () => {
+        const composer = setup(undefined, '', false)
+        expect(screen.getByRole('button', { name: 'Text context' })).toBeDisabled()
+        fireEvent.click(screen.getByRole('button', { name: 'Text context' }))
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+        await act(async () => paste(screen.getByTestId('rich-composer-input')))
+        expect(composer.getState().text).toBe(pastedText)
+        expect(composer.getState().attachments).toHaveLength(0)
+    })
+
+    it('leaves textarea long paste to the browser when attachments are disabled', () => {
+        localStorage.setItem('hapi.composer.richMentions', '0')
+        setup(undefined, 'draft', false)
+        const input = screen.getByRole('textbox')
+        const event = createEvent.paste(input, {
+            clipboardData: { files: [], getData: () => pastedText },
+        })
+        fireEvent(input, event)
+
+        expect(event.defaultPrevented).toBe(false)
+    })
+
+    it('does not try to add clipboard files without an attachment adapter', async () => {
+        const composer = setup(undefined, '', false)
+        const input = screen.getByTestId('rich-composer-input')
+        await act(async () => {
+            fireEvent.paste(input, {
+                clipboardData: {
+                    files: [new File(['photo'], 'photo.png', { type: 'image/png' })],
+                    getData: () => '',
+                },
+            })
+        })
+
+        expect(composer.getState().attachments).toHaveLength(0)
+        expect(console.error).not.toHaveBeenCalled()
     })
 
     it('does not restore pasted text when its upload was cancelled', async () => {

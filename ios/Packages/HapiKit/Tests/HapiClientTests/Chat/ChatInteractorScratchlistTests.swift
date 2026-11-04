@@ -83,6 +83,10 @@ private final class FakeScratchlist: SessionScratchlistStoring {
     func limits(sessionId: String) async -> ScratchlistAttachmentLimits {
         .defaultLimits
     }
+
+    func freshLimits(sessionId: String) async -> ScratchlistAttachmentLimits? {
+        .defaultLimits
+    }
 }
 
 // MARK: - Harness

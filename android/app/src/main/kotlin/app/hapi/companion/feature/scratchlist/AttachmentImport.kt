@@ -11,8 +11,23 @@ import app.hapi.data.store.ScratchlistAttachmentGuard
 import app.hapi.protocol.wire.ScratchlistAttachment
 import app.hapi.protocol.wire.ScratchlistAttachmentLimits
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+internal fun scratchlistAllowsJpeg(limits: ScratchlistAttachmentLimits?): Boolean =
+    limits?.allowedMimeTypes?.any { it.equals("image/jpeg", ignoreCase = true) } == true
+
+internal fun scratchlistImportLimits(limits: ScratchlistAttachmentLimits?): ScratchlistAttachmentLimits {
+    val effective = limits ?: ScratchlistAttachmentLimits.DEFAULT
+    return effective.copy(allowedMimeTypes = effective.allowedMimeTypes.mapTo(mutableListOf()) { it.lowercase(Locale.ROOT) })
+}
+
+internal fun scratchlistCompressionSettings(
+    settings: ImageCompressionSettings,
+    limits: ScratchlistAttachmentLimits?,
+): ImageCompressionSettings =
+    if (scratchlistAllowsJpeg(limits)) settings else settings.copy(enabled = false)
 
 /**
  * Production [ScratchlistAttachmentImporter]: reads the picked content URI,
@@ -30,13 +45,14 @@ class ContentResolverAttachmentImporter(
 
     override suspend fun import(
         uri: Uri,
-        limits: ScratchlistAttachmentLimits,
+        limits: ScratchlistAttachmentLimits?,
         existing: List<ScratchlistAttachment>,
     ): ScratchlistImportOutcome = withContext(Dispatchers.IO) {
+        val effectiveLimits = scratchlistImportLimits(limits)
         val prepared = when (
             val result = AttachmentPreparer(
                 context = context,
-                imageCompressionSettings = imageCompressionSettings(),
+                imageCompressionSettings = scratchlistCompressionSettings(imageCompressionSettings(), limits),
                 ioDispatcher = Dispatchers.IO,
             ).prepare(uri)
         ) {
@@ -52,14 +68,18 @@ class ContentResolverAttachmentImporter(
         }
         val bytes = prepared.bytes
         val filename = prepared.filename
-        val mimeType = prepared.mimeType
+        val mimeType = prepared.mimeType.lowercase(Locale.ROOT)
 
-        when (val verdict = ScratchlistAttachmentGuard.evaluate(bytes.size.toLong(), mimeType, existing, limits)) {
+        when (val verdict = ScratchlistAttachmentGuard.evaluate(bytes.size.toLong(), mimeType, existing, effectiveLimits)) {
             ScratchlistAttachmentGuard.Verdict.Fits ->
                 ScratchlistImportOutcome.Ready(PreparedScratchlistAttachment(filename, bytes, mimeType))
 
             is ScratchlistAttachmentGuard.Verdict.Downscale -> {
-                val compressed = downscaleToJpeg(bytes, verdict.targetBytes)
+                val compressed = if (scratchlistAllowsJpeg(limits)) {
+                    downscaleToJpeg(bytes, verdict.targetBytes)
+                } else {
+                    null
+                }
                 if (compressed == null) {
                     ScratchlistImportOutcome.Rejected(ScratchlistImportRejection.ImageTooLarge)
                 } else {
@@ -70,7 +90,7 @@ class ContentResolverAttachmentImporter(
             }
 
             is ScratchlistAttachmentGuard.Verdict.Reject ->
-                ScratchlistImportOutcome.Rejected(rejectionOf(verdict.reason, limits))
+                ScratchlistImportOutcome.Rejected(rejectionOf(verdict.reason, effectiveLimits))
         }
     }
 

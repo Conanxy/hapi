@@ -425,22 +425,7 @@ private struct ScratchlistEditorView: View {
         }
         .fileImporter(isPresented: $filePickerOpen, allowedContentTypes: [.item]) { result in
             guard case .success(let url) = result else { return }
-            let editorId = model.editor?.id
-            Task {
-                let prepared = await AttachmentPreparer.prepare(
-                    fileURL: url,
-                    settings: imageCompressionPrefs.settings
-                )
-                guard model.editor?.id == editorId else { return }
-                switch prepared {
-                case .ready(let prepared):
-                    model.addPreparedAttachment(prepared)
-                case .tooLarge(let filename, _):
-                    model.reportEditorError(String(format: String(localized: "%@ is over the 50 MB upload limit"), filename))
-                case .unreadable(let filename):
-                    model.reportEditorError(String(format: String(localized: "Couldn't read %@"), filename))
-                }
-            }
+            model.addFileAttachment(url, compressionSettings: imageCompressionPrefs.settings)
         }
     }
 }

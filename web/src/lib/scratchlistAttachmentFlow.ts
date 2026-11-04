@@ -6,7 +6,8 @@ import type { ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { hubAttachmentFromRestoredDraft } from '@/lib/scratchlistAttachmentAdapter'
-import { markFileAsUploadReady, prepareImageFileForUpload } from '@/lib/imageCompression'
+import { markFileAsUploadReady } from '@/lib/imageCompression'
+import { prepareScratchlistCompatibleImage } from '@/lib/scratchlistImageCompression'
 
 async function blobToBase64(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -120,7 +121,7 @@ export async function prepareScratchlistParkAttachments(
             if (!sourceFile) {
                 throw new Error(`Cannot park attachment ${chip.name} without file bytes`)
             }
-            const file = await prepareImageFileForUpload(sourceFile)
+            const file = await prepareScratchlistCompatibleImage(api, sessionId, sourceFile)
             const contentType = file.type || chip.contentType || 'application/octet-stream'
             const content = await blobToBase64(file)
             const result = await api.uploadScratchlistAttachment(

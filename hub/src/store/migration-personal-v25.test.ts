@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Store } from './index'
 
-describe('personal fork v25 to v29 migration', () => {
+describe('personal fork v25 to v30 migration', () => {
     it('preserves encrypted vivo registrations, session metadata, and queued text-context messages', () => {
         const directory = mkdtempSync(join(tmpdir(), 'hapi-personal-v25-'))
         const dbPath = join(directory, 'hapi.db')
@@ -34,7 +34,7 @@ describe('personal fork v25 to v29 migration', () => {
                 original.close()
             }
 
-            // Reconstruct the v25 schema by removing each artifact added in v26-v29.
+            // Reconstruct the v25 schema by removing each artifact added in v26-v30.
             const legacy = new Database(dbPath)
             try {
                 legacy.exec(`
@@ -42,6 +42,11 @@ describe('personal fork v25 to v29 migration', () => {
                     DROP INDEX idx_messages_immediate_queued;
                     DROP INDEX idx_messages_future_scheduled_queued;
                     ALTER TABLE sessions DROP COLUMN last_user_message_at;
+                    ALTER TABLE sessions DROP COLUMN content_revision;
+                    ALTER TABLE sessions DROP COLUMN read_revision;
+                    ALTER TABLE sessions DROP COLUMN read_state_version;
+                    ALTER TABLE sessions DROP COLUMN manual_unread;
+                    ALTER TABLE messages DROP COLUMN content_revision;
                     PRAGMA user_version = 25;
                 `)
             } finally {
@@ -52,6 +57,10 @@ describe('personal fork v25 to v29 migration', () => {
             try {
                 expect(migrated.sessions.getSession(sessionId)?.metadata).toEqual(metadata)
                 expect(migrated.sessions.getSession(sessionId)?.lastUserMessageAt).toBe(1_000)
+                expect(migrated.sessions.getSession(sessionId)?.contentRevision).toBe(0)
+                expect(migrated.sessions.getSession(sessionId)?.readState).toEqual({
+                    readRevision: 0, version: 0, manualUnread: false
+                })
                 expect(migrated.messages.getMessages(sessionId)).toEqual([
                     expect.objectContaining({ id: messageId, localId: 'local-context', content })
                 ])

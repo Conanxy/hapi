@@ -43,16 +43,26 @@ Choose a supported coding agent from your terminal and control its sessions remo
   DSH is remote-only and its ACP server must be configured separately.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
 - `hapi ping-peer <session-id-prefix> <message>` - Resume (if needed) and message another session. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list`.
+- `hapi spawn-peer --dir PATH --name TITLE --message-file -` - Spawn a session and deliver a required first message. Optional `--machine ID|hostname` targets another runner (resolved via GET /api/machines); `--dir` must exist on the target. Machine spawn HTTP 200 is not a working peer; this command fails if the remit does not land. Prefer MCP `spawn_peer`.
 - `hapi usage [--since 24h|7d|<ISO>|<ms>] [--until …] [--json]` - When agents were working across every machine on the hub, from `GET /api/activity`. `--json` prints one `hapi.activity.v1` report for other tools (time trackers); errors go to stderr with exit codes 2 (arguments), 3 (no token or refused), 4 (hub too old), 1 (other).
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
 - `hapi set-mode <session-id-or-prefix> <mode>` - Change the permission mode of an existing session, like the web permission picker. Active sessions switch immediately; inactive ones use it on next resume. An invalid mode prints the modes allowed for that agent.
 
-Peer messages default to `queue`: wait for the next turn, or resume an inactive
-session. Use `--delivery-mode steer` to request insertion into an active Pi,
-Codex, or Cursor ACP turn. MCP `ping_peer` accepts the same optional
-`deliveryMode: "queue" | "steer"` field.
+Peer messages default to `auto`: use the target's live state to steer an active
+Codex turn when steering is available; otherwise queue, resuming an inactive
+session if needed. Auto currently queues for all other agent flavors. Prefer
+auto for routine collaboration when queueing is an acceptable fallback.
+Use explicit `queue` for non-urgent updates that can wait. Use `steer` for
+important, time-sensitive findings the peer needs to know now, not after its
+current turn: a correction that invalidates its assumptions, a blocker, or a
+result that changes its next action. State why it matters now and what the peer
+should adjust. Steer requires insertion into an active Claude (remote), Pi, Codex, or Cursor ACP
+turn; it does not abort that turn or guarantee an immediate response. MCP `ping_peer` accepts
+the same optional `deliveryMode: "auto" | "queue" | "steer"` field. Auto is
+resolved by the peer sender; ordinary web/native chat delivery is unchanged.
 
 ```bash
+hapi ping-peer <session-id> 'The dependency is ready' --delivery-mode auto
 hapi ping-peer <session-id> 'Run the next check' --delivery-mode queue
 hapi ping-peer <session-id> 'Use the corrected input path' --delivery-mode steer
 ```
@@ -64,6 +74,9 @@ acknowledges consumption. Steer messages retain the same peer identity prefix.
 Steer rejects unsupported agents, idle targets, and inactive targets before
 sending. It reuses the queued-message Steer action: success reports `steered`,
 or `invoked` if the target consumed the message before the action arrived.
+Auto uses Codex's `steeringActive` state and control capabilities, not just
+`active` or `thinking`. If the turn changes after selection, auto uses the same
+safe error handling as explicit steer; it does not resend or silently retry.
 If steering fails after the message was accepted, the error includes its
 `localId`; it may still be queued or already consumed. Inspect the target
 before retrying; do not automatically resend the prompt. Steering does not
@@ -218,14 +231,15 @@ export HAPI_DSH_ACP_COMMAND=pnpm
 export HAPI_DSH_ACP_ARGS_JSON='["--dir", "/path/to/deepseek-harness", "run", "demo:acp"]'
 ```
 
-HAPI starts its MCP bridge and passes it to `session/new`, so HAPI peer/skill
-tools are available inside DSH. Model selection is advertised through the
-`ListDshModels` session RPC and applied per turn with ACP
-`session/set_config_option`. The adapter forwards streamed tool, reasoning,
-usage, and plan updates, and closes the ACP session before disconnecting.
-The current DSH adapter is still fresh-session-only and does not expose native
-resume or effort controls. HAPI uses the standard chat and pending one-shot
-permission surfaces; the ACP composition owns the overall permission policy.
+The DSH ACP profile can restore native context through `session/resume` when
+advertised; Hub history remains the transcript source. A legacy server may
+fall back to a fresh session with a visible notice. Model catalogs are exposed
+through `ListDshModels` and selected per turn via `session/set_config_option`.
+HAPI passes its MCP bridge to both new and resumed sessions; the configured
+ACP server must accept client-provided MCP servers for these tools to work.
+The adapter forwards tool, reasoning, usage, and plan updates when emitted and
+closes the ACP session when supported. The DSH composition owns the permission
+policy; effort controls are not exposed.
 
 ### Required
 
@@ -266,6 +280,11 @@ permission surfaces; the ACP composition owns the overall permission policy.
 
 For peer discovery and messaging, use the session's MCP `list_peers`,
 `inspect_peer`, and `ping_peer` tools, or the corresponding CLI commands.
+To create a new peer with work attached, use MCP `spawn_peer` or `hapi spawn-peer`.
+The first message is required and verified in the transcript before success;
+machine-spawn HTTP 200 alone does not prove the task was delivered. In-session
+spawns add a Parent `[title](/sessions/<uuid>)` citation so parent renames do not
+change its identity.
 On a remote runner host, configure the matching hub URL and token so shell
 commands reach the same hub (`hapi auth login` saves the token).
 
@@ -339,6 +358,30 @@ use `--skip-build`. This is a build-path check, not a comprehensive secrets audi
 Already-published packages are not changed by this fix. Rebuild before publishing
 a new version; do not reuse older artifacts. Build logs can still contain local
 paths and should not be uploaded without review.
+
+## Large Codex thread recovery
+
+Cold resumes and established internal subscriptions exclude inline turns; HAPI
+reads history separately. The initial root subscription retains the existing
+response behavior so empty native threads can initialize their history source.
+This does not truncate the native rollout or reduce the context restored by Codex.
+
+For exceptionally large threads, set `HAPI_CODEX_LAZY_HISTORY_IDS` to a
+comma-separated list of native Codex thread IDs in the Runner environment before
+starting the Runner. Only these roots replay their newest turn when reading
+paginated history and skip child history replay. Other threads retain full replay;
+legacy native threads without paginated history still use the full-history path.
+Descendant discovery and subscriptions to loaded children are retained, including
+after reconnect, so pending questions and live child events can still reach HAPI.
+
+This option favors recovery latency over Hub history completeness. It does not
+implement UI-driven pagination or asynchronous backfill. Older turns and child
+traces missing from the Hub may remain missing after reconnect; messages with an
+uncertain delivery state may need manual inspection if their acceptance evidence
+is in an older turn. Native rollout files remain intact. Historical fork checks
+still read complete history when the message-to-turn mapping is already known;
+older messages without that mapping cannot be forked through the Hub. A single
+turn can still be large, so this is a turn limit rather than a byte limit.
 
 ## Source structure
 

@@ -1,6 +1,7 @@
 import HapiClient
 import HapiProtocol
 import Observation
+import UIKit
 import XCTest
 @testable import Hapi
 
@@ -14,6 +15,8 @@ final class ScratchlistTestStore: SessionScratchlistStoring {
     var uploadStarted = false
     var uploadSucceeds = true
     var uploadCount = 0
+    var currentLimits: ScratchlistAttachmentLimits? = .defaultLimits
+    var lastUpload: PreparedAttachment?
     @ObservationIgnored var uploadGate: CheckedContinuation<Void, Never>?
     let uploaded = ScratchlistAttachment(id: "new-photo", filename: "new.txt", mimeType: "text/plain", size: 4, path: "hapi-hub:scratchlist/test/new.txt")
 
@@ -38,6 +41,7 @@ final class ScratchlistTestStore: SessionScratchlistStoring {
     func uploadAttachment(sessionId: String, filename: String, data: Data, mimeType: String) async -> ScratchlistUploadResult {
         uploadStarted = true
         uploadCount += 1
+        lastUpload = PreparedAttachment(filename: filename, mimeType: mimeType, bytes: data)
         if holdUpload { await withCheckedContinuation { uploadGate = $0 } }
         return uploadSucceeds ? .uploaded(uploaded) : .failed(message: "offline", code: nil)
     }
@@ -46,6 +50,7 @@ final class ScratchlistTestStore: SessionScratchlistStoring {
         return .removed
     }
     func limits(sessionId: String) async -> ScratchlistAttachmentLimits { .defaultLimits }
+    func freshLimits(sessionId: String) async -> ScratchlistAttachmentLimits? { currentLimits }
 }
 
 @MainActor
@@ -113,6 +118,41 @@ final class ScratchlistScreenModelTests: XCTestCase {
         XCTAssertEqual(model.editor?.attachments, [])
         XCTAssertFalse(model.editor?.isUploading ?? true)
         XCTAssertTrue(store.updates.isEmpty)
+    }
+
+    func testFileImportUsesCurrentLimitsBeforeImageCompression() async throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+            UIColor.orange.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        }
+        let png = try XCTUnwrap(image.pngData())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).png")
+        try png.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let settings = ImageCompressionSettings(enabled: true, thresholdBytes: 1, maxDimension: 2560, jpegQuality: 0.9)
+
+        for allowed in [Optional(["Image/PNG"]), nil, Optional(["IMAGE/JPEG", "Image/PNG"])] {
+            let store = ScratchlistTestStore(entries: [original])
+            if let allowed {
+                var limits = ScratchlistAttachmentLimits.defaultLimits
+                limits.allowedMimeTypes = allowed
+                store.currentLimits = limits
+            } else {
+                store.currentLimits = nil
+            }
+            let model = ScratchlistScreenModel(sessionId: "session", store: store)
+            model.openEditor(original)
+            model.addFileAttachment(url, compressionSettings: settings)
+            try await wait { store.uploadStarted }
+            let uploaded = try XCTUnwrap(store.lastUpload)
+            if allowed?.contains("IMAGE/JPEG") == true {
+                XCTAssertEqual(uploaded.mimeType, "image/jpeg")
+                XCTAssertTrue(uploaded.filename.hasSuffix(".jpg"))
+            } else {
+                XCTAssertEqual(uploaded.mimeType, "image/png")
+                XCTAssertEqual(uploaded.bytes, png)
+            }
+        }
     }
 
     func testCancellingUploadedAttachmentCleansOnlyTheNewFile() async throws {

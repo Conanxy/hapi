@@ -101,6 +101,9 @@ public protocol SessionScratchlistStoring: AnyObject {
 
     /// Hub attachment budgets, cached after the first success; defaults offline.
     func limits(sessionId: String) async -> ScratchlistAttachmentLimits
+
+    /// Current hub budgets, or nil when the request fails.
+    func freshLimits(sessionId: String) async -> ScratchlistAttachmentLimits?
 }
 
 extension SessionScratchlistStoring {
@@ -448,12 +451,16 @@ public final class ScratchlistStore: SessionScratchlistStoring {
 
     public func limits(sessionId: String) async -> ScratchlistAttachmentLimits {
         if let cachedLimits { return cachedLimits }
+        return await freshLimits(sessionId: sessionId) ?? .defaultLimits
+    }
+
+    public func freshLimits(sessionId: String) async -> ScratchlistAttachmentLimits? {
         do {
             let fetched = try await api.scratchlistLimits(sessionId: sessionId).limits
             cachedLimits = fetched
             return fetched
         } catch {
-            return .defaultLimits
+            return nil
         }
     }
 

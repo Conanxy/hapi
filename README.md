@@ -12,6 +12,24 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 - Integrated upstream tag `v0.33.2`, commit `730dfcb2`, on `2026-10-29`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
 - Published the npm wrapper and five platform packages: macOS ARM64/x64, Linux ARM64/x64, and Windows x64. They include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; this release does not include an APK or an iOS app build.
 
+## Unreleased 0.34.0 Candidate
+
+This working tree integrates upstream `v0.34.0` (`1f4518df`) as
+`0.34.0-youngfine.1`. It is not published or deployed; the installation
+command below still points to the current personal release.
+
+- DSH can restore a native session where the configured ACP server supports
+  `session/resume`; the fork retains its MCP bridge and best-effort session
+  cleanup. Earlier isolated checks covered DSH `0.1.5-rc.1` and `0.2.1-rc.5`
+  with a simulated model; the real model service and existing Runner have
+  not been verified.
+- The upstream update includes synchronized read state, attachment retry,
+  Android sharing and scheduled sends, and additional native display changes.
+  Hub upgrades its SQLite schema from v29 to v30; back up `HAPI_HOME` before upgrading.
+
+See the [v0.34.0 integration record](docs/upstream-v0.34.0-integration.md)
+for the scope and verification status.
+
 ## What's New in 0.33.2-youngfine.1
 
 Version `0.33.2-youngfine.1` integrates upstream `v0.33.2`

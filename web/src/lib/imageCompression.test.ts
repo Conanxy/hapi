@@ -1,7 +1,10 @@
 import type { AttachmentAdapter, PendingAttachment } from '@assistant-ui/react'
+import { SCRATCHLIST_ATTACHMENT_DEFAULT_LIMITS } from '@hapi/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const MIB = 1024 * 1024
+
+const getScratchlistAttachmentLimits = async () => ({ limits: SCRATCHLIST_ATTACHMENT_DEFAULT_LIMITS })
 
 function pickedImage(): File {
     return new File([new Uint8Array(3 * MIB)], 'photo.png', {
@@ -146,7 +149,7 @@ describe('prepared image bytes across attachment drafts', () => {
         const uploadFile = vi.fn()
             .mockRejectedValueOnce(new Error('offline'))
             .mockResolvedValueOnce({ success: true, path: '/uploads/photo.jpg' })
-        const adapter = createAttachmentAdapter({ uploadFile } as never, 'session')
+        const adapter = createAttachmentAdapter({ uploadFile, getScratchlistAttachmentLimits } as never, 'session')
         const failed = (await collect(adapter, pickedImage())).at(-1)!
         expect(failed.status).toEqual({ type: 'incomplete', reason: 'error' })
         expect(failed.file).toMatchObject({ name: 'photo.jpg', size: 1.5 * MIB })
@@ -169,7 +172,7 @@ describe('prepared image bytes across attachment drafts', () => {
         const [pending] = await drafts.getDraftAttachments('source')
         const uploadFile = vi.fn().mockResolvedValue({ success: true, path: '/uploads/photo.jpg' })
         const inactive = createAttachmentAdapter(
-            { uploadFile } as never,
+            { uploadFile, getScratchlistAttachmentLimits } as never,
             'source',
             async () => 'resumed',
             async (target, attachment) => transfer.transferComposerDraft('source', target, [attachment]),

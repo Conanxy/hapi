@@ -340,6 +340,12 @@ export class AcpSdkBackend implements AgentBackend {
         }
     }
 
+    /** DSH's current ACP profile exposes `session/resume` under this capability. */
+    supportsSessionResume(): boolean {
+        const capabilities = this.initializeResult?.agentCapabilities?.sessionCapabilities;
+        return Boolean(capabilities && Object.prototype.hasOwnProperty.call(capabilities, 'resume'));
+    }
+
     getSessionConfigOptions(sessionId: string): AcpConfigOptionDescriptor[] | undefined {
         return this.sessionConfigOptions.get(sessionId);
     }
@@ -438,6 +444,37 @@ export class AcpSdkBackend implements AgentBackend {
 
         const loadedSessionId = isObject(response) ? asString(response.sessionId) : null;
         const sessionId = loadedSessionId ?? config.sessionId;
+        this.activeSessionId = sessionId;
+        this.captureSessionMetadata(sessionId, response);
+        return sessionId;
+    }
+
+    /**
+     * Resume a persisted session through DSH's ACP extension. Unlike
+     * `session/load`, DSH returns config options without replaying history;
+     * HAPI's Hub remains the transcript source for the chat UI.
+     */
+    async resumeSession(config: AgentSessionConfig & { sessionId: string }): Promise<string> {
+        if (!this.transport) {
+            throw new Error('ACP transport not initialized');
+        }
+
+        const response = await withRetry(
+            () => this.transport!.sendRequest('session/resume', {
+                sessionId: config.sessionId,
+                cwd: config.cwd,
+                mcpServers: config.mcpServers
+            }),
+            {
+                ...AcpSdkBackend.INIT_RETRY_OPTIONS,
+                onRetry: (error, attempt, nextDelayMs) => {
+                    logger.debug(`[ACP] session/resume attempt ${attempt} failed, retrying in ${nextDelayMs}ms`, error);
+                }
+            }
+        );
+
+        const resumedSessionId = isObject(response) ? asString(response.sessionId) : null;
+        const sessionId = resumedSessionId ?? config.sessionId;
         this.activeSessionId = sessionId;
         this.captureSessionMetadata(sessionId, response);
         return sessionId;

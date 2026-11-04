@@ -5,7 +5,7 @@ import { isImageMimeType } from '@/lib/fileAttachments'
 import { randomId } from '@/lib/randomId'
 import { getRestoredUploadMetadata } from '@/lib/composer-attachment-drafts'
 import type { AttachmentDraftHandoff } from '@/lib/composer-draft-transfer'
-import { prepareImageFileForUpload } from '@/lib/imageCompression'
+import { prepareScratchlistCompatibleImage } from '@/lib/scratchlistImageCompression'
 
 /** Composer / share upload ceiling — keep deep-link fetch in sync. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -15,6 +15,7 @@ type PendingUploadAttachment = PendingAttachment & {
     path?: string
     previewUrl?: string
     uploadSessionId?: string
+    retryable?: boolean
 }
 
 export function createAttachmentAdapter(
@@ -71,7 +72,7 @@ export function createAttachmentAdapter(
 
             try {
                 // Compress picked images before any Base64 read or upload.
-                preparedFile = await prepareImageFileForUpload(file)
+                preparedFile = await prepareScratchlistCompatibleImage(api, sessionId, file)
                 const contentType = preparedFile.type || 'application/octet-stream'
                 const name = preparedFile.name
                 let previewUrl: string | undefined
@@ -104,8 +105,9 @@ export function createAttachmentAdapter(
                         name,
                         contentType,
                         file: preparedFile,
-                        status: { type: 'incomplete', reason: 'error' }
-                    }
+                        status: { type: 'incomplete', reason: 'error' },
+                        retryable: false,
+                    } as PendingUploadAttachment
                     return
                 }
 
@@ -159,8 +161,9 @@ export function createAttachmentAdapter(
                         name,
                         contentType,
                         file: preparedFile,
-                        status: { type: 'incomplete', reason: 'error' }
-                    }
+                        status: { type: 'incomplete', reason: 'error' },
+                        retryable: true,
+                    } as PendingUploadAttachment
                     return
                 }
 
@@ -183,8 +186,9 @@ export function createAttachmentAdapter(
                     name: preparedFile.name,
                     contentType: preparedFile.type || 'application/octet-stream',
                     file: preparedFile,
-                    status: { type: 'incomplete', reason: 'error' }
-                }
+                    status: { type: 'incomplete', reason: 'error' },
+                    retryable: true,
+                } as PendingUploadAttachment
             }
         },
 

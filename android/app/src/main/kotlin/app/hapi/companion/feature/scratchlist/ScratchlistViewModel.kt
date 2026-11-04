@@ -92,7 +92,7 @@ sealed interface ScratchlistImportOutcome {
 fun interface ScratchlistAttachmentImporter {
     suspend fun import(
         uri: Uri,
-        limits: ScratchlistAttachmentLimits,
+        limits: ScratchlistAttachmentLimits?,
         existing: List<ScratchlistAttachment>,
     ): ScratchlistImportOutcome
 }

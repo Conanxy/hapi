@@ -12,8 +12,49 @@ describe('ApiClient error mapping', () => {
         globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch
     })
 
+    it('passes an optional maxBytes bound to session file reads', async () => {
+        fetchMock.mockResolvedValueOnce(
+            new Response(JSON.stringify({ success: true, content: '' }), { status: 200 })
+        )
+
+        const api = new ApiClient('test-token')
+        await api.readSessionFile('session-1', 'images/page.png', 10 * 1024 * 1024)
+
+        expect(String(fetchMock.mock.calls[0]?.[0])).toContain('path=images%2Fpage.png')
+        expect(String(fetchMock.mock.calls[0]?.[0])).toContain('maxBytes=10485760')
+    })
+
+    it('reads scratchlist attachment limits for the encoded session id', async () => {
+        const limits = {
+            maxBytesPerFile: 10,
+            maxAttachmentsPerEntry: 4,
+            maxBytesPerEntry: 20,
+            maxBytesPerSession: 100,
+            allowedMimeTypes: ['image/png'],
+        }
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ limits }), { status: 200 }))
+
+        const api = new ApiClient('test-token')
+        await expect(api.getScratchlistAttachmentLimits('session /')).resolves.toEqual({ limits })
+        expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/sessions/session%20%2F/scratchlist/limits')
+    })
+
     afterEach(() => {
         globalThis.fetch = originalFetch
+    })
+
+    it('passes cancellation through to session file search', async () => {
+        const controller = new AbortController()
+        fetchMock.mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+            init.signal!.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }))
+        const api = new ApiClient('test-token')
+        const request = api.searchSessionFiles('session /', 'some path', 50, controller.signal)
+        const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/sessions/session%20%2F/files?query=some+path&limit=50')
+        expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal)
+        controller.abort()
+        await rejected
     })
 
     it('prefers the stable `code` field over the human-readable `error` message in ApiError.code', async () => {
