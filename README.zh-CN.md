@@ -8,17 +8,18 @@
 
 ## 版本与上游基线
 
-- 当前个人发布版本：`@youngfine/hapi@0.33.2-youngfine.1`，发布于 `2026-10-29`。
-- 已于 `2026-10-29` 合入上游标签 `v0.33.2`，对应提交 `730dfcb2`，并保留个人二开改动；本次发布以上述标签为上游基线。
-- 已发布 npm 主包及五个平台包：macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，本次不提供 APK 或 iOS 应用构建。
+- 源码版本为 `0.34.0-youngfine.1`，合入上游标签 `v0.34.0`（`1f4518df`）并保留个人二开改动。
+- 可通过 `npm view @youngfine/hapi version --registry=https://registry.npmjs.org` 查询 npm 最新发布版本；源码版本可能领先于 npm。
+- npm 主包及五个平台包覆盖 macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，npm 包不包含 APK 或 iOS 应用构建。
 
-## 未发布的 0.34.0 候选版
+## 0.34.0-youngfine.1 更新内容
 
-当前工作区将上游 `v0.34.0`（`1f4518df`）集成为 `0.34.0-youngfine.1`。
-候选版尚未发布或部署，下方安装命令仍指向当前个人发布版本。
+当前源码将上游 `v0.34.0`（`1f4518df`）集成为 `0.34.0-youngfine.1`。
+npm 发布和服务器部署需要分别进行。
 
 - 配置的 ACP 服务支持 `session/resume` 时可恢复 DSH 原生会话；保留个人版 MCP 桥接和尽力关闭会话的处理。此前使用模拟模型对 DSH `0.1.5-rc.1` 和 `0.2.1-rc.5` 做过隔离验证；真实模型服务和现有 Runner 尚未验证。
 - 上游更新包含跨客户端已读状态同步、附件上传重试、Android 分享与定时发送，以及原生界面改进；Hub 的 SQLite 数据库从 v29 升级到 v30，升级前应备份 `HAPI_HOME`。
+- Web 定时发送支持以 5 分钟为步进选择相对时间，范围为 5 分钟至 7 天，从点击发送时计算；Android 和 iOS 原生定时选择界面未修改。
 
 集成范围和验证状态见 [v0.34.0 集成记录](docs/upstream-v0.34.0-integration.md)。
 
@@ -115,8 +116,10 @@ Hub 可在实际使用的 `HAPI_HOME/settings.json`（默认 `~/.hapi/settings.j
 
 ## 使用
 
+该版本在 npm 可用后，可使用以下命令安装：
+
 ```bash
-npm install -g @youngfine/hapi@0.33.2-youngfine.1 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.34.0-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```

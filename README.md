@@ -8,15 +8,14 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Current personal release: `@youngfine/hapi@0.33.2-youngfine.1`, published on `2026-10-29`.
-- Integrated upstream tag `v0.33.2`, commit `730dfcb2`, on `2026-10-29`, preserving the fork's custom changes. This tag is the upstream baseline for this release.
-- Published the npm wrapper and five platform packages: macOS ARM64/x64, Linux ARM64/x64, and Windows x64. They include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; this release does not include an APK or an iOS app build.
+- Source version: `0.34.0-youngfine.1`, integrating upstream tag `v0.34.0` (`1f4518df`) and preserving the fork's custom changes.
+- Check the latest published npm version with `npm view @youngfine/hapi version --registry=https://registry.npmjs.org`; the source can be ahead of npm.
+- The npm wrapper and five platform packages cover macOS ARM64/x64, Linux ARM64/x64, and Windows x64, and include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; npm does not include an APK or an iOS app build.
 
-## Unreleased 0.34.0 Candidate
+## What's New in 0.34.0-youngfine.1
 
-This working tree integrates upstream `v0.34.0` (`1f4518df`) as
-`0.34.0-youngfine.1`. It is not published or deployed; the installation
-command below still points to the current personal release.
+This source integrates upstream `v0.34.0` (`1f4518df`) as
+`0.34.0-youngfine.1`. Publishing and deployment are separate steps.
 
 - DSH can restore a native session where the configured ACP server supports
   `session/resume`; the fork retains its MCP bridge and best-effort session
@@ -26,6 +25,9 @@ command below still points to the current personal release.
 - The upstream update includes synchronized read state, attachment retry,
   Android sharing and scheduled sends, and additional native display changes.
   Hub upgrades its SQLite schema from v29 to v30; back up `HAPI_HOME` before upgrading.
+- Web scheduled messages can use a relative delay in five-minute steps, from
+  five minutes to seven days, calculated when Send is pressed. The Android and
+  iOS native scheduling pickers are unchanged.
 
 See the [v0.34.0 integration record](docs/upstream-v0.34.0-integration.md)
 for the scope and verification status.
@@ -124,8 +126,10 @@ Using this vivo integration requires Hub `.4` and the corresponding Android APK.
 
 ## Usage
 
+Once this version is available on npm, install it with:
+
 ```bash
-npm install -g @youngfine/hapi@0.33.2-youngfine.1 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.34.0-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```
