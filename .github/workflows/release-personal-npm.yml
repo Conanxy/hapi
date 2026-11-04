@@ -10,11 +10,75 @@ on:
 
 permissions:
     contents: read
-    id-token: write
 
 jobs:
+    test-linux:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.4
+            - run: bun install --frozen-lockfile
+            - run: docker pull mcr.microsoft.com/powershell:latest
+            # Run this file explicitly so an accidental exclusion cannot pass
+            # the release checks without exercising the PowerShell regression.
+            - name: Test PowerShell process tree regression
+              working-directory: cli
+              run: |
+                  bun run tools:unpack
+                  ./node_modules/.bin/vitest run src/utils/windowsProcessTree.pwsh.test.ts
+            - run: bun run test
+
+    test-macos:
+        runs-on: macos-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: 1.4.4
+            - run: bun install --frozen-lockfile
+            - name: Verify version
+              env:
+                  RELEASE_VERSION: ${{ inputs.version }}
+              run: |
+                  PACKAGE_VERSION="$(node -p "require('./cli/package.json').version")"
+                  BUILD_VERSION="$(sed -n "s/export const APP_VERSION = '\\([^']*\\)'/\\1/p" shared/src/buildInfo.ts)"
+                  test "$RELEASE_VERSION" = "$PACKAGE_VERSION"
+                  test "$RELEASE_VERSION" = "$BUILD_VERSION"
+            - run: bun typecheck
+            # Docker's PowerShell regression runs explicitly in test-linux.
+            - name: Test CLI
+              working-directory: cli
+              run: |
+                  bun run tools:unpack
+                  ./node_modules/.bin/vitest run --exclude '**/windowsProcessTree.pwsh.test.ts'
+            - name: Test remaining packages
+              run: |
+                  bun run test:hub
+                  bun run test:web
+                  bun run test:shared
+                  bun run test:relay
+            # A non-main dispatch validates building and codesigning without
+            # granting npm publishing permissions.
+            - name: Verify platform builds and signatures
+              if: github.ref != 'refs/heads/main'
+              run: |
+                  bun run build:single-exe:all
+                  bun run --cwd cli prepare-npm-packages
+
     publish:
-        if: github.ref_name == 'main'
+        needs: [test-linux, test-macos]
+        if: github.ref == 'refs/heads/main'
+        permissions:
+            contents: read
+            id-token: write
         # Darwin binaries must be ad-hoc signed with Apple's codesign before
         # publish, including artifacts built with an older Bun toolchain.
         runs-on: macos-latest
@@ -37,8 +101,6 @@ jobs:
                   BUILD_VERSION="$(sed -n "s/export const APP_VERSION = '\\([^']*\\)'/\\1/p" shared/src/buildInfo.ts)"
                   test "$RELEASE_VERSION" = "$PACKAGE_VERSION"
                   test "$RELEASE_VERSION" = "$BUILD_VERSION"
-            - run: bun typecheck
-            - run: bun run test
             - run: bun run build:single-exe:all
             - name: Publish platform and wrapper packages
               env:
