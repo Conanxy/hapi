@@ -1,4 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { MinusIcon, PlusIcon } from '@/components/icons'
+import {
+    isValidRelativeScheduleMinutes,
+    MAX_RELATIVE_SCHEDULE_MINUTES,
+    RELATIVE_SCHEDULE_STEP_MINUTES,
+} from '@/lib/relativeSchedule'
 import { useTranslation } from '@/lib/use-translation'
 
 // ---------------------------------------------------------------------------
@@ -11,24 +17,29 @@ import { useTranslation } from '@/lib/use-translation'
  * - preset: user clicked a relative preset (e.g. '+5m').  The absolute time is
  *   computed at send time (Date.now() + delay) so "5 minutes from now" always
  *   means 5 minutes from when the user hits Send, not when they clicked the preset.
+ * - relative: a custom delay in minutes, also resolved at send time.
  * - absolute: user picked a specific datetime-local value.  Stored as epoch-ms;
  *   unchanged at send time.
  */
 export type PendingSchedule =
     | { type: 'preset'; preset: '+5m' | '+30m' | '+1h' | '+4h' }
+    | { type: 'relative'; minutes: number }
     | { type: 'absolute'; ms: number }
 
 /**
  * Convert a PendingSchedule to an absolute epoch-ms at send time.
  * Returns null if pending is null.
  *
- * For 'preset' entries the base time is sendNow (the moment the user hits Send),
- * so "5 minutes from now" is always relative to the actual send action.
+ * For relative entries the base time is sendNow (the moment the user hits Send).
  * For 'absolute' entries the stored ms value is returned unchanged.
  */
 export function resolvePendingSchedule(pending: PendingSchedule | null, sendNow: number): number | null {
     if (pending === null) return null
     if (pending.type === 'preset') return parsePreset(pending.preset, sendNow)
+    if (pending.type === 'relative') {
+        if (!isValidRelativeScheduleMinutes(pending.minutes)) throw new Error('Invalid relative schedule')
+        return sendNow + pending.minutes * 60 * 1000
+    }
     return pending.ms
 }
 
@@ -161,6 +172,13 @@ interface ScheduleTimePickerProps {
 export function ScheduleTimePicker({ onSchedule, onClose, anchorRef, pendingSchedule }: ScheduleTimePickerProps) {
     const { t } = useTranslation()
     const [tab, setTab] = useState<'relative' | 'specific'>('relative')
+    const [relativeMinutes, setRelativeMinutes] = useState(() => {
+        if (pendingSchedule?.type === 'relative' && isValidRelativeScheduleMinutes(pendingSchedule.minutes)) {
+            return pendingSchedule.minutes
+        }
+        if (pendingSchedule?.type === 'preset') return parsePreset(pendingSchedule.preset, 0) / 60_000
+        return RELATIVE_SCHEDULE_STEP_MINUTES
+    })
     const [specificValue, setSpecificValue] = useState('')
     const [specificError, setSpecificError] = useState<string | null>(null)
     const panelRef = useRef<HTMLDivElement>(null)
@@ -254,6 +272,11 @@ export function ScheduleTimePicker({ onSchedule, onClose, anchorRef, pendingSche
         onClose()
     }
 
+    const handleRelativeSubmit = () => {
+        onSchedule({ type: 'relative', minutes: relativeMinutes })
+        onClose()
+    }
+
     const handleSpecificSubmit = () => {
         if (!specificValue) return
         const parsed = new Date(specificValue).getTime()
@@ -339,24 +362,64 @@ export function ScheduleTimePicker({ onSchedule, onClose, anchorRef, pendingSche
             {/* Tab content */}
             <div className="px-3 pb-3">
                 {tab === 'relative' ? (
-                    <div className="grid grid-cols-2 gap-1.5">
-                        {PRESETS.map((preset) => {
-                            const isSelected = pendingSchedule?.type === 'preset' && pendingSchedule.preset === preset
-                            return (
-                                <button
-                                    key={preset}
-                                    type="button"
-                                    onClick={() => handlePresetClick(preset)}
-                                    className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                                        isSelected
-                                            ? 'border-blue-500 bg-blue-500 text-white'
-                                            : 'border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] hover:border-[var(--app-link)]'
-                                    }`}
-                                >
-                                    {preset}
-                                </button>
-                            )
-                        })}
+                    <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-1.5">
+                            {PRESETS.map((preset) => {
+                                const isSelected = pendingSchedule?.type === 'preset' && pendingSchedule.preset === preset
+                                return (
+                                    <button
+                                        key={preset}
+                                        type="button"
+                                        onClick={() => handlePresetClick(preset)}
+                                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                                            isSelected
+                                                ? 'border-blue-500 bg-blue-500 text-white'
+                                                : 'border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] hover:border-[var(--app-link)]'
+                                        }`}
+                                    >
+                                        {preset}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                aria-label={t('composer.scheduleDecreaseFiveMinutes')}
+                                title={t('composer.scheduleDecreaseFiveMinutes')}
+                                disabled={relativeMinutes <= RELATIVE_SCHEDULE_STEP_MINUTES}
+                                onClick={() => setRelativeMinutes((minutes) => Math.max(
+                                    RELATIVE_SCHEDULE_STEP_MINUTES,
+                                    minutes - RELATIVE_SCHEDULE_STEP_MINUTES,
+                                ))}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <MinusIcon className="h-4 w-4" />
+                            </button>
+                            <output aria-live="polite" className="min-w-0 flex-1 text-center text-sm font-medium text-[var(--app-fg)]">
+                                {t('composer.scheduleMinutes', { minutes: relativeMinutes })}
+                            </output>
+                            <button
+                                type="button"
+                                aria-label={t('composer.scheduleIncreaseFiveMinutes')}
+                                title={t('composer.scheduleIncreaseFiveMinutes')}
+                                disabled={relativeMinutes >= MAX_RELATIVE_SCHEDULE_MINUTES}
+                                onClick={() => setRelativeMinutes((minutes) => Math.min(
+                                    MAX_RELATIVE_SCHEDULE_MINUTES,
+                                    minutes + RELATIVE_SCHEDULE_STEP_MINUTES,
+                                ))}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[var(--app-border)] text-[var(--app-fg)] hover:bg-[var(--app-secondary-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <PlusIcon className="h-4 w-4" />
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleRelativeSubmit}
+                            className="w-full rounded-lg bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+                        >
+                            {t('composer.scheduleSend')}
+                        </button>
                     </div>
                 ) : (
                     <div className="flex flex-col gap-2">

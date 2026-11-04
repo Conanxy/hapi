@@ -150,6 +150,8 @@ function pendingSchedulesEqual(a: PendingSchedule | null, b: PendingSchedule | n
     switch (a.type) {
         case 'preset':
             return b.type === 'preset' && a.preset === b.preset
+        case 'relative':
+            return b.type === 'relative' && a.minutes === b.minutes
         case 'absolute':
             return b.type === 'absolute' && a.ms === b.ms
     }

@@ -213,6 +213,10 @@ describe('shouldAutoClearPendingSchedule', () => {
         }
     })
 
+    it('returns false for custom relative schedules', () => {
+        expect(shouldAutoClearPendingSchedule({ type: 'relative', minutes: 15 })).toBe(false)
+    })
+
     it('returns true for absolute schedule — absolute schedules have a fixed expiry instant', () => {
         const absolute: PendingSchedule = { type: 'absolute', ms: Date.now() + 60_000 }
         expect(shouldAutoClearPendingSchedule(absolute)).toBe(true)

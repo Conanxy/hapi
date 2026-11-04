@@ -1,6 +1,7 @@
 import { StrictMode, useSyncExternalStore } from 'react'
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import type { Session } from '@/types/api'
 import { useHappyRuntime } from './assistant-runtime'
 
@@ -43,5 +44,39 @@ describe('assistant-ui composer snapshots', () => {
         expect(onSendMessage).toHaveBeenCalledExactlyOnceWith('dictated words', undefined, null, 'default')
         expect(result.current.snapshot.text).toBe('')
         expect(result.current.composer.getState()).toBe(result.current.snapshot)
+    })
+
+    it('sends a custom relative schedule from the actual send time', async () => {
+        const onSendMessage = vi.fn()
+        const session = { id: 'scheduled-test', active: true, thinking: false } as Session
+        const pendingScheduleRef: { current: PendingSchedule | null } = {
+            current: { type: 'relative', minutes: 15 },
+        }
+        const { result } = renderHook(() => useHappyRuntime({
+            session,
+            blocks: [],
+            messagesVersion: 0,
+            historyVersion: 0,
+            isSending: false,
+            isRunning: false,
+            onSendMessage,
+            onAbort: vi.fn(async () => {}),
+            pendingScheduleRef,
+        }))
+        act(() => result.current.thread.composer.setText('send later'))
+
+        const sendNow = 1_700_000_000_000
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(sendNow)
+        try {
+            await act(async () => result.current.thread.composer.send())
+            expect(onSendMessage).toHaveBeenCalledExactlyOnceWith(
+                'send later',
+                undefined,
+                sendNow + 15 * 60_000,
+                'default',
+            )
+        } finally {
+            clock.mockRestore()
+        }
     })
 })

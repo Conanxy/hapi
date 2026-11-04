@@ -98,6 +98,20 @@ describe('resolvePendingSchedule', () => {
         expect(resolvePendingSchedule(pending, sendNow)).toBe(sendNow + 4 * 60 * 60 * 1000)
     })
 
+    it('custom relative schedules are based on the send instant', () => {
+        const sendNow = 1_700_000_000_000
+        expect(resolvePendingSchedule({ type: 'relative', minutes: 10 }, sendNow)).toBe(sendNow + 10 * 60_000)
+        expect(resolvePendingSchedule({ type: 'relative', minutes: 15 }, sendNow)).toBe(sendNow + 15 * 60_000)
+    })
+
+    it('rejects custom delays outside the five-minute steps and seven-day limit', () => {
+        for (const minutes of [0, -5, 7, 10.5, 7 * 24 * 60 + 5, Infinity, NaN]) {
+            expect(() => resolvePendingSchedule({ type: 'relative', minutes }, 1_000)).toThrow('Invalid relative schedule')
+        }
+        expect(resolvePendingSchedule({ type: 'relative', minutes: 7 * 24 * 60 }, 1_000))
+            .toBe(1_000 + 7 * 24 * 60 * 60_000)
+    })
+
     it('absolute: returns stored ms unchanged regardless of sendNow', () => {
         const ms = 1_700_000_000_000 + 60_000
         const sendNow = 1_700_000_000_000 + 999_999 // very different from pick time

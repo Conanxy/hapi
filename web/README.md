@@ -77,6 +77,9 @@ The Hub persists and enforces the lock across clients, restarts, and resume.
 
 - Message thread with infinite scroll.
 - Composer for sending messages.
+- Scheduled text messages support the existing relative presets, a custom
+  relative delay in five-minute steps, or a specific date and time. Relative
+  delays are calculated when Send is pressed and are limited to seven days.
 - Separate file and text-context actions in the composer. Text context is
   converted to a UTF-8 `.txt` attachment so the message body can remain a
   concise request.

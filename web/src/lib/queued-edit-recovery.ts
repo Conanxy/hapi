@@ -1,4 +1,5 @@
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
+import { isValidRelativeScheduleMinutes } from '@/lib/relativeSchedule'
 
 const STORAGE_KEY = 'hapi:queued-edit-recovery'
 
@@ -29,15 +30,21 @@ const PRESETS = new Set<Extract<PendingSchedule, { type: 'preset' }>['preset']>(
 
 function clonePendingSchedule(schedule: PendingSchedule | null): PendingSchedule | null {
     if (schedule === null) return null
-    return schedule.type === 'preset'
-        ? { type: 'preset', preset: schedule.preset }
-        : { type: 'absolute', ms: schedule.ms }
+    switch (schedule.type) {
+        case 'preset':
+            return { type: 'preset', preset: schedule.preset }
+        case 'relative':
+            return { type: 'relative', minutes: schedule.minutes }
+        case 'absolute':
+            return { type: 'absolute', ms: schedule.ms }
+    }
 }
 
 function isPendingSchedule(value: unknown): value is PendingSchedule {
     if (!value || typeof value !== 'object') return false
     const record = value as Record<string, unknown>
     return (record.type === 'preset' && typeof record.preset === 'string' && PRESETS.has(record.preset as never))
+        || (record.type === 'relative' && isValidRelativeScheduleMinutes(record.minutes))
         || (record.type === 'absolute' && typeof record.ms === 'number' && Number.isFinite(record.ms))
 }
 

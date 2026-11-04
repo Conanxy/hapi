@@ -336,6 +336,32 @@ describe('QueuedMessagesBar edit restore', () => {
         })
     })
 
+    it('treats equivalent custom relative schedules as unchanged', async () => {
+        const scheduledAt = Date.now() + 60_000
+        const { onEdit, rerender } = renderQueuedMessage(scheduledAt, { type: 'relative', minutes: 15 })
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit queued message' }))
+        rerender({ type: 'relative', minutes: 15 })
+        await resolveCancel({ status: 'cancelled' })
+
+        expect(onEdit).toHaveBeenCalledWith({
+            text: 'Queued request',
+            pendingSchedule: { type: 'absolute', ms: scheduledAt },
+        })
+    })
+
+    it('keeps a changed custom relative schedule while a queued edit is pending', async () => {
+        const scheduledAt = Date.now() + 60_000
+        const { onEdit, rerender } = renderQueuedMessage(scheduledAt, { type: 'relative', minutes: 10 })
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit queued message' }))
+        rerender({ type: 'relative', minutes: 15 })
+        await resolveCancel({ status: 'cancelled' })
+
+        expect(mocks.composerSetText).not.toHaveBeenCalled()
+        expect(onEdit).not.toHaveBeenCalled()
+    })
+
     it('globally disables queued operations and keeps the first edit completion', async () => {
         const scheduledAt = Date.now() + 60_000
         const first = makeQueuedMessage(null, 'server-message-a')

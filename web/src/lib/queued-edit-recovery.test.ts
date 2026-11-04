@@ -65,6 +65,39 @@ describe('queued-edit-recovery', () => {
         expect(listener).toHaveBeenCalledTimes(1)
     })
 
+    it('persists and restores custom relative schedules in both recovery fields', async () => {
+        const store = await loadStore()
+        store.saveQueuedEditRecovery('session-1', {
+            text: 'queued edit',
+            pendingSchedule: { type: 'relative', minutes: 10 },
+            composerTextAtEdit: 'current draft',
+            pendingScheduleAtEdit: { type: 'relative', minutes: 15 },
+        })
+
+        vi.resetModules()
+        const reloaded = await loadStore()
+        expect(reloaded.getQueuedEditRecovery('session-1')).toMatchObject({
+            pendingSchedule: { type: 'relative', minutes: 10 },
+            pendingScheduleAtEdit: { type: 'relative', minutes: 15 },
+        })
+    })
+
+    it('rejects invalid persisted custom relative delays', async () => {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(
+            [0, -5, 7, 10.5, 10_085].map((minutes, index) => [`bad-${index}`, {
+                id: `bad-${index}`,
+                text: 'text',
+                pendingSchedule: { type: 'relative', minutes },
+                composerTextAtEdit: '',
+                pendingScheduleAtEdit: null,
+            }])
+        )))
+
+        const store = await loadStore()
+        expect(store.getQueuedEditRecovery('bad-0')).toBeNull()
+        expect(sessionStorage.getItem(STORAGE_KEY)).toBe('{}')
+    })
+
     it('keeps at most one pending operation per session and token-protects newer work', async () => {
         const store = await loadStore()
         const listener = vi.fn()
