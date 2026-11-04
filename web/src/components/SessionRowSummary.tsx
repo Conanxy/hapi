@@ -148,8 +148,7 @@ export function SessionRowSummary(props: {
 
     // Presence lives on the agent icon (pulsing while a turn or background
     // work runs) instead of dimming disconnected rows or adding spinners.
-    const isRunning = s.active && s.thinking
-    const isBackgroundOnly = s.active && !s.thinking && (s.backgroundTaskCount ?? 0) > 0
+    const isWorking = s.active && (s.thinking || (s.backgroundTaskCount ?? 0) > 0)
     // Unread is a semibold title plus accent time — no dot, so the presence
     // badge stays the row's only dot. The label stays for screen readers.
     const isUnread = attention?.kind === 'unread'
@@ -165,8 +164,9 @@ export function SessionRowSummary(props: {
                 <span
                     data-testid="session-presence"
                     className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-[var(--app-bg)] ${
-                        isBackgroundOnly ? 'bg-blue-400' : 'bg-[var(--app-badge-success-text)]'
-                    } ${isRunning || isBackgroundOnly ? 'animate-pulse' : ''}`}
+                        isWorking ? 'bg-red-500 animate-pulse' : 'bg-[var(--app-badge-success-text)]'
+                    }`}
+                    style={isWorking ? { animationDuration: '1s' } : undefined}
                 />
             ) : null}
         </span>

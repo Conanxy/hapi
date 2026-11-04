@@ -52,7 +52,8 @@ describe('SessionRowSummary background status', () => {
     it('marks running and background work on the presence badge, without spinners', () => {
         const background = renderSummary(false).container
         const backgroundBadge = background.querySelector('[data-testid="session-presence"]')
-        expect(backgroundBadge).toHaveClass('bg-blue-400', 'animate-pulse')
+        expect(backgroundBadge).toHaveClass('bg-red-500', 'animate-pulse')
+        expect(backgroundBadge).toHaveStyle({ animationDuration: '1s' })
         expect(background.querySelector('svg.animate-spin-slow')).toBeNull()
         cleanup()
 
@@ -61,8 +62,9 @@ describe('SessionRowSummary background status', () => {
                 <SessionRowSummary session={makeSummary({ thinking: true, backgroundTaskCount: 0 })} />
             </I18nProvider>
         ).container
-        expect(thinking.querySelector('[data-testid="session-presence"]'))
-            .toHaveClass('bg-[var(--app-badge-success-text)]', 'animate-pulse')
+        const thinkingBadge = thinking.querySelector('[data-testid="session-presence"]')
+        expect(thinkingBadge).toHaveClass('bg-red-500', 'animate-pulse')
+        expect(thinkingBadge).toHaveStyle({ animationDuration: '1s' })
         expect(screen.queryByText('Running', { exact: true })).not.toBeInTheDocument()
         cleanup()
 
@@ -71,7 +73,47 @@ describe('SessionRowSummary background status', () => {
                 <SessionRowSummary session={makeSummary({ backgroundTaskCount: 0 })} />
             </I18nProvider>
         ).container
-        expect(idle.querySelector('[data-testid="session-presence"]')).not.toHaveClass('animate-pulse')
+        const idleBadge = idle.querySelector('[data-testid="session-presence"]')
+        expect(idleBadge).toHaveClass('bg-[var(--app-badge-success-text)]')
+        expect(idleBadge).not.toHaveClass('bg-red-500')
+        expect(idleBadge).not.toHaveClass('animate-pulse')
+        expect(idleBadge).not.toHaveStyle({ animationDuration: '1s' })
+    })
+
+    it('updates the presence badge when a session changes state', () => {
+        const session = makeSummary({ thinking: true, backgroundTaskCount: 0 })
+        const view = render(
+            <I18nProvider>
+                <SessionRowSummary session={session} />
+            </I18nProvider>
+        )
+        const presence = () => view.container.querySelector('[data-testid="session-presence"]')
+        expect(presence()).toHaveClass('bg-red-500', 'animate-pulse')
+        expect(presence()).toHaveStyle({ animationDuration: '1s' })
+
+        view.rerender(
+            <I18nProvider>
+                <SessionRowSummary session={{ ...session, thinking: false }} />
+            </I18nProvider>
+        )
+        expect(presence()).toHaveClass('bg-[var(--app-badge-success-text)]')
+        expect(presence()).not.toHaveClass('animate-pulse')
+        expect(presence()).not.toHaveStyle({ animationDuration: '1s' })
+
+        view.rerender(
+            <I18nProvider>
+                <SessionRowSummary session={{ ...session, thinking: false, backgroundTaskCount: 1 }} />
+            </I18nProvider>
+        )
+        expect(presence()).toHaveClass('bg-red-500', 'animate-pulse')
+        expect(presence()).toHaveStyle({ animationDuration: '1s' })
+
+        view.rerender(
+            <I18nProvider>
+                <SessionRowSummary session={{ ...session, active: false }} />
+            </I18nProvider>
+        )
+        expect(presence()).toBeNull()
     })
 
     it('does not dim disconnected rows or show them a presence badge', () => {
@@ -202,7 +244,7 @@ describe('SessionRowSummary background status', () => {
         )
 
         expectUnread()
-        expect(container.querySelector('[data-testid="session-presence"]')).toHaveClass('bg-blue-400', 'animate-pulse')
+        expect(container.querySelector('[data-testid="session-presence"]')).toHaveClass('bg-red-500', 'animate-pulse')
     })
 
     it('shows pending requests as an amber symbol, not a dot', () => {
