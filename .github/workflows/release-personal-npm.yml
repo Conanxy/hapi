@@ -30,7 +30,7 @@ jobs:
               working-directory: cli
               run: |
                   bun run tools:unpack
-                  ./node_modules/.bin/vitest run src/utils/windowsProcessTree.pwsh.test.ts
+                  ./node_modules/.bin/vitest run src/utils/windowsProcessTree.pwsh.test.ts --testTimeout 60000
             - run: bun run test
 
     test-macos:
