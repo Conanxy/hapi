@@ -8,13 +8,17 @@
 
 ## 版本与上游基线
 
-- 源码版本为 `0.34.0-youngfine.1`，合入上游标签 `v0.34.0`（`1f4518df`）并保留个人二开改动。
+- 源码版本为 `0.34.0-youngfine.2`，合入上游标签 `v0.34.0`（`1f4518df`）并保留个人二开改动。
 - 可通过 `npm view @youngfine/hapi version --registry=https://registry.npmjs.org` 查询 npm 最新发布版本；源码版本可能领先于 npm。
 - npm 主包及五个平台包覆盖 macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，npm 包不包含 APK 或 iOS 应用构建。
 
+## 0.34.0-youngfine.2 更新内容
+
+- Web 会话列表中，在线会话执行前台回合或后台任务时，状态圆点显示为红色并以 1 秒为周期呼吸；空闲时保持绿色且不闪烁。
+
 ## 0.34.0-youngfine.1 更新内容
 
-当前源码将上游 `v0.34.0`（`1f4518df`）集成为 `0.34.0-youngfine.1`。
+版本 `0.34.0-youngfine.1` 合入上游 `v0.34.0`（`1f4518df`）。
 npm 发布和服务器部署需要分别进行。
 
 - 配置的 ACP 服务支持 `session/resume` 时可恢复 DSH 原生会话；保留个人版 MCP 桥接和尽力关闭会话的处理。此前使用模拟模型对 DSH `0.1.5-rc.1` 和 `0.2.1-rc.5` 做过隔离验证；真实模型服务和现有 Runner 尚未验证。
@@ -119,7 +123,7 @@ Hub 可在实际使用的 `HAPI_HOME/settings.json`（默认 `~/.hapi/settings.j
 该版本在 npm 可用后，可使用以下命令安装：
 
 ```bash
-npm install -g @youngfine/hapi@0.34.0-youngfine.1 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.34.0-youngfine.2 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```

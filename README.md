@@ -8,14 +8,20 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Source version: `0.34.0-youngfine.1`, integrating upstream tag `v0.34.0` (`1f4518df`) and preserving the fork's custom changes.
+- Source version: `0.34.0-youngfine.2`, integrating upstream tag `v0.34.0` (`1f4518df`) and preserving the fork's custom changes.
 - Check the latest published npm version with `npm view @youngfine/hapi version --registry=https://registry.npmjs.org`; the source can be ahead of npm.
 - The npm wrapper and five platform packages cover macOS ARM64/x64, Linux ARM64/x64, and Windows x64, and include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; npm does not include an APK or an iOS app build.
 
+## What's New in 0.34.0-youngfine.2
+
+- In the Web session list, an active session's status dot pulses red every
+  second while a turn or background task is running. It stays green without
+  pulsing when the session is idle.
+
 ## What's New in 0.34.0-youngfine.1
 
-This source integrates upstream `v0.34.0` (`1f4518df`) as
-`0.34.0-youngfine.1`. Publishing and deployment are separate steps.
+Version `0.34.0-youngfine.1` integrated upstream `v0.34.0` (`1f4518df`).
+Publishing and deployment are separate steps.
 
 - DSH can restore a native session where the configured ACP server supports
   `session/resume`; the fork retains its MCP bridge and best-effort session
@@ -129,7 +135,7 @@ Using this vivo integration requires Hub `.4` and the corresponding Android APK.
 Once this version is available on npm, install it with:
 
 ```bash
-npm install -g @youngfine/hapi@0.34.0-youngfine.1 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.34.0-youngfine.2 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```
