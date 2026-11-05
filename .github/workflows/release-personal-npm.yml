@@ -81,7 +81,7 @@ jobs:
             id-token: write
         # Darwin binaries must be ad-hoc signed with Apple's codesign before
         # publish, including artifacts built with an older Bun toolchain.
-        runs-on: macos-latest
+        runs-on: macos-15-intel
         steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-node@v4
