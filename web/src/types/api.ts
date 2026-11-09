@@ -127,6 +127,9 @@ export type HubHealthResponse = {
         workGraph?: boolean
         titleSuggestion?: boolean
     }
+    limits?: {
+        maxRequestBodyBytes?: number
+    }
 }
 
 export type MessageStatus = 'queued' | 'sending' | 'sent' | 'failed'

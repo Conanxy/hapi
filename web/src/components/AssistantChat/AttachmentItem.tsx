@@ -22,6 +22,7 @@ import { isFileUploadReady, markFileAsUploadReady } from '@/lib/imageCompression
 type ComposerAttachmentWithPreview = PendingAttachment & {
     previewUrl?: string
     retryable?: boolean
+    errorCode?: 'file_too_large' | 'request_body_too_large'
 }
 
 const TRUNCATED_REMOVE_MARGIN_LEFT = '-7px'
@@ -45,6 +46,8 @@ export type AttachmentRetryHandler = (
 const fallbackTranslations: Record<string, string> = {
     'attachment.retryUpload': 'Retry upload',
     'attachment.uploadFailed': 'Upload failed',
+    'attachment.fileTooLarge': 'File exceeds the 50 MB limit',
+    'attachment.requestTooLarge': 'Upload exceeds the server request limit',
 }
 
 function useAttachmentTranslation() {
@@ -133,7 +136,7 @@ export function AttachmentItem(props: {
     retryingAttachmentIdsRef?: MutableRefObject<Set<string>>
     onRetry?: AttachmentRetryHandler
 } = {}) {
-    const { id, name, file, status, previewUrl, retryable } = useAuiState((s) => s.attachment) as ComposerAttachmentWithPreview
+    const { id, name, file, status, previewUrl, retryable, errorCode } = useAuiState((s) => s.attachment) as ComposerAttachmentWithPreview
     const aui = useAui()
     const composer = aui.composer()
     const isParking = useComposerParking()
@@ -143,6 +146,11 @@ export function AttachmentItem(props: {
     const [isFilenameTruncated, setIsFilenameTruncated] = useState(false)
     const isUploading = status.type === 'running'
     const isError = status.type === 'incomplete'
+    const errorMessage = errorCode === 'file_too_large'
+        ? t('attachment.fileTooLarge')
+        : errorCode === 'request_body_too_large'
+            ? t('attachment.requestTooLarge')
+            : t('attachment.uploadFailed')
     const showRetry = isError && retryable !== false && !isParking
     const isRetryPending = isRetrying || props.retryingAttachmentIdsRef?.current.has(id) === true
 
@@ -289,19 +297,19 @@ export function AttachmentItem(props: {
             ) : null}
             {isUploading ? <Spinner size="sm" label={null} className="text-[var(--app-hint)]" /> : null}
             {isError && (!showRetry || isParking) ? (
-                <span data-testid="attachment-error-icon" className="text-red-500">
-                    <span aria-hidden="true">
-                        <ErrorIcon />
-                    </span>
-                    <span className="sr-only">{t('attachment.uploadFailed')}</span>
+                <span data-testid="attachment-error-icon" className="text-red-500" aria-hidden="true">
+                    <ErrorIcon />
                 </span>
             ) : null}
-            <span
-                ref={filenameRef}
-                className={`max-w-[150px] truncate ${isError ? 'text-red-500 line-through' : ''}`}
-            >
-                {name}
-            </span>
+            <div className="flex min-w-0 flex-col">
+                <span
+                    ref={filenameRef}
+                    className={`max-w-[150px] truncate ${isError ? 'text-red-500 line-through' : ''}`}
+                >
+                    {name}
+                </span>
+                {isError ? <span className="text-xs text-red-500">{errorMessage}</span> : null}
+            </div>
             {!isParking ? (
                 <AttachmentPrimitive.Remove
                     className="hapi-composer-attachment-control hapi-composer-attachment-file-control -mx-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-transparent text-[var(--app-hint)] transition-colors hover:text-[var(--app-fg)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--app-link)]"

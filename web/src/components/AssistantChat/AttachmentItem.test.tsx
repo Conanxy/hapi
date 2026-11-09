@@ -164,7 +164,7 @@ describe('AttachmentItem', () => {
         renderAttachmentWithControls()
 
         expect(screen.queryByRole('img')).not.toBeInTheDocument()
-        expect(screen.queryByText('Upload failed')).not.toBeInTheDocument()
+        expect(screen.getByText('Upload failed')).toBeVisible()
         expect(screen.queryByText('Retry')).not.toBeInTheDocument()
         expect(screen.queryByTestId('attachment-drag-handle')).not.toBeInTheDocument()
         expect(screen.getByText('broken.png')).toHaveClass('line-through')
@@ -357,7 +357,7 @@ describe('AttachmentItem', () => {
 
         expect(screen.queryByRole('button', { name: 'Retry upload' })).not.toBeInTheDocument()
         expect(screen.getByTestId('attachment-error-icon')).toBeInTheDocument()
-        expect(screen.getByText('Upload failed')).toHaveClass('sr-only')
+        expect(screen.getByText('Upload failed')).toBeVisible()
     })
 
     it('rechecks filename truncation when an image enters the error layout', () => {

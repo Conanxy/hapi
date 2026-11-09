@@ -6,6 +6,7 @@ import {
     saveDraftAttachments,
     type AttachmentDraftInput,
 } from '@/lib/composer-attachment-drafts'
+import { moveSendRecoveries } from '@/lib/send-recovery'
 
 type ComposerDraftSnapshot = {
     text: string
@@ -526,6 +527,9 @@ export async function transferComposerDraftThenNavigate(
     } catch (error) {
         console.warn('[composer-draft] transfer failed after resume; continuing navigation', error)
     }
+    await moveSendRecoveries(sourceSessionId, targetSessionId).catch((error) => {
+        console.warn('[composer-draft] recovery transfer failed after resume', error)
+    })
     await navigate()
 }
 
@@ -609,6 +613,9 @@ export async function handoffComposerDraft(
         }
         // Navigate even when the local durable move failed — resume may already
         // have deleted the source session row.
+        await moveSendRecoveries(sourceSessionId, targetSessionId).catch((error) => {
+            console.warn('[composer-draft] recovery transfer failed after resume', error)
+        })
         await onNavigable(targetSessionId)
         const late = state.pending.filter((item) => !batch.some((early) => early.id === item.id))
         if (late.length > 0) {

@@ -1,4 +1,4 @@
-import { clearDraft } from '@/lib/composer-drafts'
+import { clearDraft, getDraftRevision } from '@/lib/composer-drafts'
 import { clearDraftAttachments } from '@/lib/composer-attachment-drafts'
 
 function clearComposerDraft(sessionId: string): void {
@@ -7,16 +7,15 @@ function clearComposerDraft(sessionId: string): void {
 }
 
 /**
- * Clear draft(s) after a successful send.
- * When `resolveSessionId` swaps the session (e.g. inactive → resumed),
- * the sent ID differs from the route's session ID, so both must be cleared.
+ * Only clear the submitted composer if it has not been edited since dispatch.
+ * A resumed session may already contain a different draft, so it is not
+ * cleared using the source composer's revision.
  */
 export function clearDraftsAfterSend(
     sentSessionId: string,
-    routeSessionId: string | null,
+    guard?: { sessionId: string; revision: number },
 ): void {
-    clearComposerDraft(sentSessionId)
-    if (routeSessionId && sentSessionId !== routeSessionId) {
-        clearComposerDraft(routeSessionId)
-    }
+    if (!guard || guard.sessionId !== sentSessionId) return
+    if (getDraftRevision(guard.sessionId) !== guard.revision) return
+    clearComposerDraft(guard.sessionId)
 }

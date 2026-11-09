@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MutableRefObject } from 'react'
 import { getDraft, markDraftEdited, saveDraft } from '@/lib/composer-drafts'
 import {
     getDraftAttachments,
@@ -49,6 +49,7 @@ export function useComposerDraft(
     canRestoreAttachments: boolean,
     setText: (text: string) => void,
     addAttachment: (file: File) => Promise<void>,
+    sentTextRef?: MutableRefObject<{ sessionId: string; text: string } | null>,
 ): ComposerDraftHydration {
     const textRevisionRef = useRef({ sessionId, text: composerText })
     const composerTextRef = useRef(composerText)
@@ -244,10 +245,16 @@ export function useComposerDraft(
     useEffect(() => {
         const previous = textRevisionRef.current
         if (sessionId && previous.sessionId === sessionId && previous.text !== composerText) {
-            markDraftEdited(sessionId)
+            const sentText = sentTextRef?.current
+            if (sentTextRef && sentText?.sessionId === sessionId && sentText.text === previous.text && composerText === '') {
+                sentTextRef.current = null
+            } else {
+                if (sentTextRef?.current?.sessionId === sessionId) sentTextRef.current = null
+                markDraftEdited(sessionId)
+            }
         }
         textRevisionRef.current = { sessionId, text: composerText }
-    }, [sessionId, composerText])
+    }, [sessionId, composerText, sentTextRef])
 
     return hydration
 }

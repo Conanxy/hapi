@@ -14,7 +14,7 @@ vi.mock('@/lib/composer-attachment-drafts', () => ({
     saveDraftAttachments: vi.fn(),
 }))
 
-import { getDraft, saveDraft } from '@/lib/composer-drafts'
+import { getDraft, markDraftEdited, saveDraft } from '@/lib/composer-drafts'
 import { getDraftAttachments, getRestoredUploadMetadata, saveDraftAttachments } from '@/lib/composer-attachment-drafts'
 import { getLiveComposerDraft, useComposerDraft } from './useComposerDraft'
 
@@ -82,6 +82,23 @@ describe('useComposerDraft', () => {
         expect(getLiveComposerDraft('hydration-clear')?.getText()).toBe('saved text')
         act(() => result.current(''))
         expect(getLiveComposerDraft('hydration-clear')?.getText()).toBe('')
+    })
+
+    it('distinguishes the automatic send clear from a later draft edit', async () => {
+        const sentTextRef: { current: { sessionId: string; text: string } | null } = { current: null }
+        const { rerender } = renderHook(
+            ({ text }) => useComposerDraft('sent-draft', text, [], true, vi.fn(), vi.fn(), sentTextRef),
+            { initialProps: { text: 'original message' } },
+        )
+        await act(async () => flushRAF())
+        vi.mocked(markDraftEdited).mockClear()
+
+        sentTextRef.current = { sessionId: 'sent-draft', text: 'original message' }
+        rerender({ text: '' })
+        expect(markDraftEdited).not.toHaveBeenCalled()
+
+        rerender({ text: 'new draft' })
+        expect(markDraftEdited).toHaveBeenCalledWith('sent-draft')
     })
 
     it('restores only missing stored attachments when a visible pick already exists', async () => {

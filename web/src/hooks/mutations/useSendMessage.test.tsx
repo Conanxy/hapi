@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { useSendMessage, type SendMessageAcceptance } from './useSendMessage'
 import { ApiError, type ApiClient } from '@/api/client'
+import * as recovery from '@/lib/send-recovery'
 
 vi.mock('@/lib/message-window-store', () => ({
     appendOptimisticMessage: vi.fn(),
@@ -45,7 +46,9 @@ function deferred<T>() {
 
 describe('useSendMessage', () => {
     beforeEach(() => {
+        vi.restoreAllMocks()
         vi.clearAllMocks()
+        vi.spyOn(recovery, 'markSendRecoveryRetryStarted').mockResolvedValue(undefined)
     })
 
     it('calls onSuccess with the session ID that was sent', async () => {
@@ -450,7 +453,7 @@ describe('useSendMessage', () => {
             expect(info.text).toBe('hi from resumed')
         })
 
-        it('attachment send: keeps the failed row in the thread and skips composer-restore', async () => {
+        it('attachment send: keeps the failed row and reports the error', async () => {
             // The composer-restore path can't reinstate uploaded attachment
             // metadata, so for sends with attachments we fall back to the
             // legacy failed-bubble UX (operator retries via the in-thread
@@ -478,9 +481,10 @@ describe('useSendMessage', () => {
             await waitFor(() => {
                 expect(updateMock).toHaveBeenCalledWith('session-A', 'local-id-1', 'failed')
             })
-            // No composer-restore: onError is NOT fired and the optimistic
-            // row is NOT removed -- both would destroy the attachment UX.
-            expect(onError).not.toHaveBeenCalled()
+            expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+                hasAttachments: true,
+                error: expect.any(Error),
+            }))
             expect(removeMock).not.toHaveBeenCalled()
         })
 
@@ -884,6 +888,66 @@ describe('useSendMessage', () => {
             scheduledAt,
             'queue',
         )
+    })
+
+    it('waits for the retry backup state before resending the message', async () => {
+        const save = deferred<void>()
+        const recovery = await import('@/lib/send-recovery')
+        const startRetry = vi.spyOn(recovery, 'markSendRecoveryRetryStarted').mockReturnValueOnce(save.promise)
+        const { getMessageWindowState } = await import('@/lib/message-window-store')
+        vi.mocked(getMessageWindowState).mockReturnValueOnce({
+            messages: [{
+                id: 'retry-id',
+                localId: 'retry-id',
+                content: { role: 'user', content: { type: 'text', text: 'recover' } },
+                createdAt: 1,
+                scheduledAt: null,
+                status: 'failed',
+                originalText: 'recover',
+            }],
+        } as never)
+        const sendMock = vi.fn(async () => {})
+        const { result } = renderHook(
+            () => useSendMessage(createMockApi(sendMock), 'session-A'),
+            { wrapper: createWrapper() },
+        )
+
+        act(() => { result.current.retryMessage('retry-id') })
+        expect(sendMock).not.toHaveBeenCalled()
+        await act(async () => { save.resolve(); await save.promise })
+        await waitFor(() => expect(sendMock).toHaveBeenCalledOnce())
+        startRetry.mockRestore()
+    })
+
+    it('does not resend when saving the retry state fails', async () => {
+        vi.mocked(recovery.markSendRecoveryRetryStarted).mockRejectedValueOnce(new Error('storage unavailable'))
+        const { getMessageWindowState, updateMessageStatus } = await import('@/lib/message-window-store')
+        vi.mocked(getMessageWindowState).mockReturnValueOnce({
+            messages: [{
+                id: 'retry-id',
+                localId: 'retry-id',
+                content: { role: 'user', content: { type: 'text', text: 'recover' } },
+                createdAt: 1,
+                scheduledAt: null,
+                status: 'failed',
+                originalText: 'recover',
+            }],
+        } as never)
+        const sendMock = vi.fn(async () => {})
+        const onError = vi.fn()
+        const { result } = renderHook(
+            () => useSendMessage(createMockApi(sendMock), 'session-A', { onError }),
+            { wrapper: createWrapper() },
+        )
+
+        act(() => { result.current.retryMessage('retry-id') })
+        await waitFor(() => expect(onError).toHaveBeenCalledOnce())
+        expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+            mutationStarted: false,
+            error: expect.objectContaining({ code: 'recovery_storage_unavailable' }),
+        }))
+        expect(sendMock).not.toHaveBeenCalled()
+        expect(updateMessageStatus).not.toHaveBeenCalledWith('session-A', 'retry-id', 'sending')
     })
 
     it('downgrades a failed steer to queue when retrying the message', async () => {

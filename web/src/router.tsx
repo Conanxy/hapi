@@ -371,10 +371,19 @@ function classifySendError(
     error: unknown,
     t: (key: string) => string,
 ): { message: string; code: string | null } {
+    if (error instanceof ApiError && error.code === 'recovery_storage_unavailable') {
+        return { message: t('chat.recovery.saveFailed'), code: error.code }
+    }
+    if (error instanceof ApiError && error.status === 413) {
+        return { message: t('chat.sendError.tooLarge'), code: 'request_body_too_large' }
+    }
     if (error instanceof ApiError && error.status === 409 && error.code === 'session_inactive') {
         return { message: t('chat.sendError.sessionInactive'), code: 'session_inactive' }
     }
     if (error instanceof Error && error.message) {
+        if (error instanceof TypeError || (error instanceof ApiError && error.status >= 500)) {
+            return { message: t('chat.sendError.unknown'), code: 'unknown' }
+        }
         return { message: error.message, code: null }
     }
     return { message: t('chat.sendError.fallback'), code: null }
@@ -650,8 +659,8 @@ function SessionPage() {
         isSending,
     } = useSendMessage(api, sessionId, {
         isSessionThinking: session?.thinking ?? false,
-        onSuccess: (sentSessionId) => {
-            clearDraftsAfterSend(sentSessionId, sessionId)
+        onSuccess: (sentSessionId, draftGuard) => {
+            clearDraftsAfterSend(sentSessionId, draftGuard)
             // 中文注释：一旦用户已经在 Hapi 内继续这个 Codex 会话，就清除"刚从 Codex 导入"的标记。
             clearCodexImportedSession(session?.metadata?.codexSessionId)
             // A successful send supersedes any previously-rendered error
@@ -676,7 +685,8 @@ function SessionPage() {
                     scheduledAt: info.scheduledAt,
                     deliveryMode: info.deliveryMode,
                     mutationStarted: info.mutationStarted,
-                    restoreSuppressed: false,
+                    restoreSuppressed: info.hasAttachments === true,
+                    recoveryId: info.localId,
                 }
             }))
         },

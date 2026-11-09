@@ -1,5 +1,5 @@
 import type { AttachmentAdapter, PendingAttachment, CompleteAttachment, Attachment } from '@assistant-ui/react'
-import type { ApiClient } from '@/api/client'
+import { ApiError, type ApiClient } from '@/api/client'
 import type { AttachmentMetadata } from '@/types/api'
 import { isImageMimeType } from '@/lib/fileAttachments'
 import { randomId } from '@/lib/randomId'
@@ -16,6 +16,7 @@ type PendingUploadAttachment = PendingAttachment & {
     previewUrl?: string
     uploadSessionId?: string
     retryable?: boolean
+    errorCode?: 'file_too_large' | 'request_body_too_large'
 }
 
 export function createAttachmentAdapter(
@@ -75,6 +76,26 @@ export function createAttachmentAdapter(
                 preparedFile = await prepareScratchlistCompatibleImage(api, sessionId, file)
                 const contentType = preparedFile.type || 'application/octet-stream'
                 const name = preparedFile.name
+                if (preparedFile.size > MAX_UPLOAD_BYTES) {
+                    yield {
+                        id,
+                        type: 'file',
+                        name,
+                        contentType,
+                        file: preparedFile,
+                        status: { type: 'incomplete', reason: 'error' },
+                        errorCode: 'file_too_large',
+                        retryable: false,
+                    } as PendingUploadAttachment
+                    return
+                }
+
+                // The upload is JSON with Base64 content, not the raw file.
+                const emptyBody = JSON.stringify({ filename: name, content: '', mimeType: contentType })
+                const requestBytes = new Blob([emptyBody]).size + Math.ceil(preparedFile.size / 3) * 4
+                if (typeof api.assertRequestBodySize === 'function') {
+                    await api.assertRequestBodySize(requestBytes)
+                }
                 let previewUrl: string | undefined
                 if (isImageMimeType(contentType) && preparedFile.size <= MAX_PREVIEW_BYTES) {
                     try {
@@ -95,19 +116,6 @@ export function createAttachmentAdapter(
                 } as PendingUploadAttachment
 
                 if (cancelledAttachmentIds.has(id)) {
-                    return
-                }
-
-                if (preparedFile.size > MAX_UPLOAD_BYTES) {
-                    yield {
-                        id,
-                        type: 'file',
-                        name,
-                        contentType,
-                        file: preparedFile,
-                        status: { type: 'incomplete', reason: 'error' },
-                        retryable: false,
-                    } as PendingUploadAttachment
                     return
                 }
 
@@ -179,7 +187,8 @@ export function createAttachmentAdapter(
                     uploadSessionId,
                 } as PendingUploadAttachment
 
-            } catch {
+            } catch (error) {
+                const tooLarge = error instanceof ApiError && error.status === 413
                 yield {
                     id,
                     type: 'file',
@@ -187,7 +196,8 @@ export function createAttachmentAdapter(
                     contentType: preparedFile.type || 'application/octet-stream',
                     file: preparedFile,
                     status: { type: 'incomplete', reason: 'error' },
-                    retryable: true,
+                    ...(tooLarge ? { errorCode: 'request_body_too_large' as const } : {}),
+                    retryable: !tooLarge,
                 } as PendingUploadAttachment
             }
         },

@@ -1,10 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode, TextareaHTMLAttributes } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '@/lib/i18n-context'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import type { ComposerSendIntent } from '@/lib/messageDelivery'
+import type { PreparedComposerSend } from '@/lib/composer-send-recovery'
+import type { SendRecovery } from '@/lib/send-recovery'
+import { ApiError, type ApiClient } from '@/api/client'
 import { HappyComposer, type ComposerSendError } from './HappyComposer'
 
 /**
@@ -12,7 +15,14 @@ import { HappyComposer, type ComposerSendError } from './HappyComposer'
  * composer store. This focused harness supplies the small subset of that
  * store necessary to exercise send → user interaction → delayed error races.
  */
-type FakeAttachment = { id: string; status: { type: 'complete' } }
+type FakeAttachment = {
+    id: string
+    status: { type: 'complete' | 'requires-action' }
+    file?: File
+    path?: string
+    name?: string
+    contentType?: string
+}
 type MockComposerInputProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
     asChild?: boolean
     maxRows?: number
@@ -31,6 +41,12 @@ const runtime = vi.hoisted(() => ({
     } as FakeRuntimeState,
     setSnapshot: null as null | ((updater: (current: FakeRuntimeState) => FakeRuntimeState) => void),
     pendingSendIntentRef: null as null | { current: ComposerSendIntent },
+    preparedSendsRef: null as null | { current: PreparedComposerSend[] },
+    recoveries: [] as SendRecovery[],
+    addedFiles: [] as File[],
+    saveRecovery: vi.fn(async () => {}),
+    discardRecovery: vi.fn(async () => {}),
+    assertRequestSize: vi.fn(async (_bytes: number) => {}),
     sentIntents: [] as ComposerSendIntent[],
     modelChanges: [] as Array<{ provider: string; modelId: string } | string | null>,
     pendingHydration: null as Promise<void> | null,
@@ -42,7 +58,7 @@ vi.mock('@assistant-ui/react', async () => {
     const React = await import('react')
     const api = {
         composer: () => ({
-            getState: () => runtime.snapshot.composer,
+            getState: () => ({ ...runtime.snapshot.composer, canSend: true }),
             setText: (text: string) => {
                 runtime.setSnapshot!((current) => ({
                     ...current,
@@ -58,7 +74,23 @@ vi.mock('@assistant-ui/react', async () => {
                     composer: { text: '', attachments: [] },
                 }))
             },
-            addAttachment: async () => {},
+            addAttachment: async (file: File) => {
+                runtime.addedFiles.push(file)
+                runtime.setSnapshot!((current) => ({
+                    ...current,
+                    composer: {
+                        ...current.composer,
+                        attachments: [...current.composer.attachments, {
+                            id: `restored-${runtime.addedFiles.length}`,
+                            file,
+                            name: file.name,
+                            contentType: file.type,
+                            path: '/uploaded',
+                            status: { type: 'requires-action' },
+                        }],
+                    },
+                }))
+            },
         }),
         thread: () => ({ cancelRun: () => {} }),
     }
@@ -96,6 +128,21 @@ vi.mock('@assistant-ui/react', async () => {
         },
     }
 })
+
+vi.mock('@/lib/send-recovery', () => ({
+    saveSendRecovery: runtime.saveRecovery,
+    discardSendRecovery: runtime.discardRecovery,
+    listSendRecoveries: async () => runtime.recoveries,
+    markSendRecoveryFailed: vi.fn(async () => {}),
+    completeSendRecovery: vi.fn(async () => {}),
+    moveSendRecoveries: vi.fn(async () => {}),
+    recoveryAttachmentFile: (attachment: SendRecovery['attachments'][number]) => new File(
+        [attachment.blob],
+        attachment.name,
+        { type: attachment.type, lastModified: attachment.lastModified },
+    ),
+    subscribeSendRecoveries: () => () => {},
+}))
 
 vi.mock('@/lib/composerSegments', () => ({
     isRichComposerMentionsEnabled: () => false,
@@ -159,8 +206,10 @@ vi.mock('@/components/AssistantChat/ComposerButtons', () => ({
 type HarnessControls = {
     setError: (error: ComposerSendError | null) => void
     addAttachment: () => void
+    addFile: (file: File) => void
     removeAttachments: () => void
     acceptAndClearSchedule: () => void
+    changeScheduleExternally: (schedule: PendingSchedule) => void
     remount: () => void
     programmaticSetText: (text: string) => void
     setSending: (sending: boolean) => void
@@ -172,6 +221,7 @@ function ComposerHarness(props: {
     initialText: string
     initialSchedule?: PendingSchedule | null
     piRunning?: boolean
+    enableRecovery?: boolean
     controls: { current: HarnessControls | null }
 }) {
     const [snapshot, setSnapshot] = useState<FakeRuntimeState>(() => ({
@@ -184,10 +234,13 @@ function ComposerHarness(props: {
     const [composerKey, setComposerKey] = useState('composer-a')
     const clearErrorCallsRef = useRef(0)
     const pendingSendIntentRef = useRef<ComposerSendIntent>('default')
+    const preparedSendsRef = useRef<PreparedComposerSend[]>([])
+    const pendingScheduleRevisionRef = useRef(0)
 
     runtime.snapshot = snapshot
     runtime.setSnapshot = setSnapshot
     runtime.pendingSendIntentRef = pendingSendIntentRef
+    runtime.preparedSendsRef = preparedSendsRef
     props.controls.current = {
         setError: sendError => setSendError(sendError),
         addAttachment: () => setSnapshot((current) => ({
@@ -197,11 +250,29 @@ function ComposerHarness(props: {
                 attachments: [{ id: 'new-attachment', status: { type: 'complete' } }],
             },
         })),
+        addFile: (file) => setSnapshot((current) => ({
+            ...current,
+            composer: {
+                ...current.composer,
+                attachments: [{
+                    id: 'picked-file',
+                    file,
+                    name: file.name,
+                    contentType: file.type,
+                    path: '/uploaded',
+                    status: { type: 'requires-action' },
+                }],
+            },
+        })),
         removeAttachments: () => setSnapshot((current) => ({
             ...current,
             composer: { ...current.composer, attachments: [] },
         })),
         acceptAndClearSchedule: () => setSchedule(null),
+        changeScheduleExternally: (next) => {
+            pendingScheduleRevisionRef.current += 1
+            setSchedule(next)
+        },
         remount: () => setComposerKey((key) => key === 'composer-a' ? 'composer-b' : 'composer-a'),
         programmaticSetText: (text) => setSnapshot((current) => ({
             ...current,
@@ -240,6 +311,11 @@ function ComposerHarness(props: {
                 piModels={[{ provider: 'pi', modelId: 'pi-model', name: 'Pi model' }]}
                 onModelChange={(model) => runtime.modelChanges.push(model)}
                 pendingSendIntentRef={pendingSendIntentRef}
+                pendingScheduleRevisionRef={pendingScheduleRevisionRef}
+                preparedSendsRef={props.enableRecovery ? preparedSendsRef : undefined}
+                voiceTranscriptionApi={props.enableRecovery
+                    ? { assertRequestBodySize: runtime.assertRequestSize } as unknown as ApiClient
+                    : undefined}
             />
         </I18nProvider>
     )
@@ -249,11 +325,12 @@ function renderComposer(
     initialText = 'failed text',
     initialSchedule: PendingSchedule | null = { type: 'absolute', ms: 1234 },
     piRunning = false,
+    enableRecovery = false,
 ) {
     const controls: { current: HarnessControls | null } = { current: null }
     runtime.sentIntents = []
     runtime.modelChanges = []
-    render(<ComposerHarness initialText={initialText} initialSchedule={initialSchedule} piRunning={piRunning} controls={controls} />)
+    render(<ComposerHarness initialText={initialText} initialSchedule={initialSchedule} piRunning={piRunning} enableRecovery={enableRecovery} controls={controls} />)
     return controls
 }
 
@@ -584,6 +661,140 @@ describe('HappyComposer send intent gestures', () => {
         fireEvent.keyDown(input(), { key: 'Enter', altKey: true })
         expect(runtime.sentIntents).toEqual([])
         expect(runtime.pendingSendIntentRef?.current).toBe('default')
+    })
+})
+
+describe('HappyComposer durable message recovery', () => {
+    beforeEach(() => {
+        runtime.recoveries = []
+        runtime.addedFiles = []
+        runtime.saveRecovery.mockReset().mockResolvedValue(undefined)
+        runtime.discardRecovery.mockReset().mockResolvedValue(undefined)
+        runtime.assertRequestSize.mockReset().mockResolvedValue(undefined)
+    })
+
+    afterEach(() => {
+        cleanup()
+        runtime.recoveries = []
+        runtime.setSnapshot = null
+    })
+
+    it('keeps the message in the composer when preflight detects a 413', async () => {
+        runtime.assertRequestSize.mockRejectedValueOnce(new ApiError('too large', 413))
+        renderComposer('oversized message', null, false, true)
+
+        send()
+
+        await waitFor(() => expect(screen.getByText(/exceeds the server request limit/)).toBeInTheDocument())
+        expect(input()).toHaveValue('oversized message')
+        expect(runtime.saveRecovery).not.toHaveBeenCalled()
+        expect(runtime.sentIntents).toEqual([])
+    })
+
+    it('keeps the text and file when browser storage cannot save the backup', async () => {
+        runtime.saveRecovery.mockRejectedValueOnce(new Error('storage full'))
+        const controls = renderComposer('keep both', null, false, true)
+        const file = new File(['document'], 'notes.txt', { type: 'text/plain' })
+        act(() => controls.current!.addFile(file))
+
+        send()
+
+        await waitFor(() => expect(screen.getByText(/Could not save a message backup/)).toBeInTheDocument())
+        expect(input()).toHaveValue('keep both')
+        expect(runtime.snapshot.composer.attachments[0]?.file).toBe(file)
+        expect(runtime.sentIntents).toEqual([])
+    })
+
+    it('does not send a stale snapshot after the user edits while it is being saved', async () => {
+        let finish!: () => void
+        const savePending = new Promise<void>((resolve) => { finish = resolve })
+        runtime.saveRecovery.mockReturnValueOnce(savePending)
+        renderComposer('original draft', null, false, true)
+
+        send()
+        await waitFor(() => expect(runtime.saveRecovery).toHaveBeenCalled())
+        fireEvent.change(input(), { target: { value: 'new draft' } })
+        await act(async () => { finish(); await savePending })
+
+        await waitFor(() => expect(runtime.discardRecovery).toHaveBeenCalledOnce())
+        expect(input()).toHaveValue('new draft')
+        expect(runtime.sentIntents).toEqual([])
+    })
+
+    it('does not send a stale schedule when it changes while a backup is being saved', async () => {
+        let finish!: () => void
+        const savePending = new Promise<void>((resolve) => { finish = resolve })
+        runtime.saveRecovery.mockReturnValueOnce(savePending)
+        const controls = renderComposer('scheduled draft', { type: 'relative', minutes: 5 }, false, true)
+
+        send()
+        await waitFor(() => expect(runtime.saveRecovery).toHaveBeenCalled())
+        act(() => controls.current!.changeScheduleExternally({ type: 'relative', minutes: 10 }))
+        await act(async () => { finish(); await savePending })
+
+        await waitFor(() => expect(runtime.discardRecovery).toHaveBeenCalledOnce())
+        expect(input()).toHaveValue('scheduled draft')
+        expect(runtime.sentIntents).toEqual([])
+    })
+
+    it('backs up the attachment before dispatch and preserves the send identity', async () => {
+        const controls = renderComposer('message with file', null, false, true)
+        const file = new File(['document'], 'notes.txt', { type: 'text/plain' })
+        act(() => controls.current!.addFile(file))
+
+        send()
+
+        await waitFor(() => expect(runtime.sentIntents).toEqual(['default']))
+        expect(runtime.saveRecovery).toHaveBeenCalledWith(expect.objectContaining({
+            text: 'message with file',
+            attachments: [{ id: 'picked-file', file }],
+        }))
+        expect(runtime.preparedSendsRef?.current[0]).toMatchObject({
+            text: 'message with file',
+            attachmentIds: ['picked-file'],
+            localId: expect.stringMatching(/^local-/),
+        })
+    })
+
+    it('restores the saved text and file while keeping an unknown-result warning', async () => {
+        runtime.recoveries = [{
+            id: 'failed-1',
+            sessionId: 'composer-a',
+            text: 'recover me',
+            attachments: [{
+                id: 'file-1',
+                name: 'notes.txt',
+                type: 'text/plain',
+                lastModified: 1,
+                blob: new Blob(['document']),
+                uploadReady: true,
+            }],
+            pendingSchedule: null,
+            deliveryMode: 'queue',
+            createdAt: 1,
+            status: 'unknown',
+        }]
+        renderComposer('', null, false, true)
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Edit and restore' }))
+
+        await waitFor(() => expect(input()).toHaveValue('recover me'))
+        await waitFor(() => expect(runtime.addedFiles[0]?.name).toBe('notes.txt'))
+        expect(runtime.addedFiles[0]?.size).toBe(8)
+        expect(screen.getByText(/send result is unknown/i)).toBeInTheDocument()
+    })
+
+    it('does not overwrite an existing draft when restoring a backup', async () => {
+        runtime.recoveries = [{
+            id: 'failed-2', sessionId: 'composer-a', text: 'old message', attachments: [],
+            pendingSchedule: null, deliveryMode: 'queue', createdAt: 1, status: 'not_sent',
+        }]
+        renderComposer('new draft', null, false, true)
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Edit and restore' }))
+
+        expect(input()).toHaveValue('new draft')
+        expect(screen.getByText(/composer already has a draft/)).toBeInTheDocument()
     })
 })
 

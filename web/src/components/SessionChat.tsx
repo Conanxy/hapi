@@ -89,6 +89,8 @@ import {
 import { useTranslation } from '@/lib/use-translation'
 import type { SendMessageAcceptance } from '@/hooks/mutations/useSendMessage'
 import { handoffComposerDraft, transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
+import { guardRecoveryAttachmentPreparation, type PreparedComposerSend } from '@/lib/composer-send-recovery'
+import { completeSendRecovery, markSendRecoveryFailed } from '@/lib/send-recovery'
 import { SessionHeader } from '@/components/SessionHeader'
 import { CursorMigrationBanner } from '@/components/CursorMigrationBanner'
 import { TeamPanel } from '@/components/TeamPanel'
@@ -260,6 +262,10 @@ export function shouldClearReasoningEffortForModelChange(args: {
  */
 export function shouldAutoClearPendingSchedule(pending: PendingSchedule | null): boolean {
     return pending !== null && pending.type === 'absolute'
+}
+
+export function shouldClearPendingScheduleAfterSend(sentRevision: number, currentRevision: number): boolean {
+    return sentRevision === currentRevision
 }
 
 /**
@@ -616,6 +622,8 @@ type SessionChatProps = {
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode?: MessageDeliveryMode,
+        preparedLocalId?: string,
+        draftRevision?: number,
     ) => Promise<SendMessageAcceptance | false>
     resolveSessionIdForUpload?: (sessionId: string) => Promise<string>
     onUploadSessionResolved?: (sessionId: string) => void
@@ -949,6 +957,8 @@ function SessionChatInner(props: SessionChatProps) {
             attachments?: AttachmentMetadata[],
             scheduledAt?: number | null,
             deliveryMode: MessageDeliveryMode = 'queue',
+            preparedLocalId?: string,
+            draftRevision?: number,
         ): Promise<{ attemptId: string | null } | false> => {
             if (
                 scratchlistMode
@@ -987,6 +997,8 @@ function SessionChatInner(props: SessionChatProps) {
                     ordered,
                     scheduledAt,
                     deliveryMode,
+                    preparedLocalId,
+                    draftRevision,
                 )
                 if (accepted) {
                     // Hub blobs were copied into the normal upload dir; drop the
@@ -1003,7 +1015,7 @@ function SessionChatInner(props: SessionChatProps) {
                 await navigate({ to: '/sessions/$sessionId', params: { sessionId: result.sessionId }, ...PRESERVE_SESSION_SIDEBAR_SCROLL })
                 return { attemptId: null }
             }
-            return props.onSend(text, attachments, scheduledAt, deliveryMode)
+            return props.onSend(text, attachments, scheduledAt, deliveryMode, preparedLocalId, draftRevision)
         },
         [props.onSend, props.api, props.session.id, props.session.metadata?.capabilities?.concurrentClients, navigate, scratchlist, scratchlistMode],
     )
@@ -1850,9 +1862,11 @@ function SessionChatInner(props: SessionChatProps) {
     // absolute epoch-ms using Date.now() at that moment (send-time base for presets).
     const [pendingSchedule, setPendingSchedule] = useState<PendingSchedule | null>(null)
     const [pendingScheduleRevision, setPendingScheduleRevision] = useState(0)
+    const pendingScheduleRevisionRef = useRef(0)
     const updatePendingSchedule = useCallback((next: PendingSchedule | null) => {
         setPendingSchedule(next)
-        setPendingScheduleRevision((revision) => revision + 1)
+        pendingScheduleRevisionRef.current += 1
+        setPendingScheduleRevision(pendingScheduleRevisionRef.current)
     }, [])
     const pendingScheduleRef = useRef<PendingSchedule | null>(null)
     // Keep render ref in sync so onNew can snapshot at send time
@@ -1862,6 +1876,7 @@ function SessionChatInner(props: SessionChatProps) {
     // turn, so explicit or retry-safe queue intents never stick to later
     // ordinary sends.
     const pendingSendIntentRef = useRef<ComposerSendIntent>('default')
+    const preparedSendsRef = useRef<PreparedComposerSend[]>([])
     const attachmentOrderRef = useRef<string[]>([])
     const restoredSendErrorIdRef = useRef<number | null>(null)
 
@@ -1907,7 +1922,11 @@ function SessionChatInner(props: SessionChatProps) {
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         intent: ComposerSendIntent = 'default',
+        preparedLocalId?: string,
+        draftRevision?: number,
+        scheduleRevision?: number,
     ) => {
+        const sentScheduleRevision = scheduleRevision ?? pendingScheduleRevisionRef.current
         // Route through the scratchlist-aware wrapper. When scratchlistMode
         // is on AND the payload is pure text, this turns into
         // addScratchlistEntry; otherwise it goes to props.onSend (the chat
@@ -1929,8 +1948,20 @@ function SessionChatInner(props: SessionChatProps) {
             scheduledAt,
             routesToScratchlist: routedToScratchlist,
         })
-        const accepted = await onSendForComposer(text, attachments, scheduledAt, deliveryMode)
-        if (!accepted) return
+        let accepted: { attemptId: string | null } | false
+        try {
+            accepted = await onSendForComposer(text, attachments, scheduledAt, deliveryMode, preparedLocalId, draftRevision)
+        } catch {
+            if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'unknown').catch(() => {})
+            return
+        }
+        if (!accepted) {
+            if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
+            return
+        }
+        if (accepted.attemptId === null && preparedLocalId) {
+            void completeSendRecovery(preparedLocalId).catch(() => {})
+        }
         if (!routedToScratchlist) {
             // Clear pendingSchedule only after the mutation is actually
             // accepted - covers both pre-mutation guards AND async
@@ -1939,7 +1970,9 @@ function SessionChatInner(props: SessionChatProps) {
             // its own send path). Schedule clear / forced scroll only
             // matter for chat sends; scratchlist adds don't have a
             // schedule and shouldn't move the chat viewport.
-            updatePendingSchedule(null)
+            if (shouldClearPendingScheduleAfterSend(sentScheduleRevision, pendingScheduleRevisionRef.current)) {
+                updatePendingSchedule(null)
+            }
             setForceScrollToken((token) => token + 1)
         }
     }, [agentFlavor, onSendForComposer, props.session.thinking, scratchlistMode, updatePendingSchedule])
@@ -1948,11 +1981,14 @@ function SessionChatInner(props: SessionChatProps) {
         if (props.session.active && scratchlistMode) {
             const adapter = createScratchlistAttachmentAdapter(props.api, props.session.id)
             scratchlistAdapterRef.current = adapter
-            return adapter
+            return guardRecoveryAttachmentPreparation(adapter, preparedSendsRef)
         }
         scratchlistAdapterRef.current = null
         if (props.session.active) {
-            return createAttachmentAdapter(props.api, props.session.id)
+            return guardRecoveryAttachmentPreparation(
+                createAttachmentAdapter(props.api, props.session.id),
+                preparedSendsRef,
+            )
         }
         // Only offer attachments on inactive sessions that can actually resume;
         // otherwise file picks become stuck error attachments that cannot send.
@@ -1971,7 +2007,7 @@ function SessionChatInner(props: SessionChatProps) {
             })
             return uploadResolution
         }
-        return createAttachmentAdapter(
+        return guardRecoveryAttachmentPreparation(createAttachmentAdapter(
             props.api,
             props.session.id,
             resolveUploadSession,
@@ -1989,7 +2025,7 @@ function SessionChatInner(props: SessionChatProps) {
                     },
                 )
             },
-        )
+        ), preparedSendsRef)
     }, [props.api, props.session.id, props.session.active, props.resolveSessionIdForUpload, scratchlistMode, inactiveCanResume])
 
 
@@ -2010,6 +2046,7 @@ function SessionChatInner(props: SessionChatProps) {
         allowSendWhenInactive: true,
         pendingScheduleRef,
         pendingSendIntentRef,
+        preparedSendsRef,
     })
 
     return (
@@ -2382,6 +2419,8 @@ function SessionChatInner(props: SessionChatProps) {
                         onClearSendError={handleClearSendError}
                         onSuppressSendErrorRestore={props.onSuppressSendErrorRestore}
                         pendingSendIntentRef={pendingSendIntentRef}
+                        pendingScheduleRevisionRef={pendingScheduleRevisionRef}
+                        preparedSendsRef={preparedSendsRef}
                         />
                     </div>
                     </div>

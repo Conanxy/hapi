@@ -16,6 +16,8 @@ import type { ToolGroupBlock, VisibleChatBlock } from '@/chat/toolGroups'
 import { visibleBlockRole } from '@/chat/toolGroups'
 import type { AttachmentMetadata, MessageStatus as HappyMessageStatus, Session } from '@/types/api'
 import { orderItemsById } from '@/lib/attachmentOrder'
+import { consumePreparedComposerSend, type PreparedComposerSend } from '@/lib/composer-send-recovery'
+import { markSendRecoveryFailed } from '@/lib/send-recovery'
 
 /**
  * Aggregated metadata for a multi-turn response group, surfaced on the
@@ -769,7 +771,10 @@ export function useHappyRuntime(props: {
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         intent?: ComposerSendIntent,
-    ) => void
+        preparedLocalId?: string,
+        draftRevision?: number,
+        scheduleRevision?: number,
+    ) => void | Promise<void>
     attachmentOrderRef?: React.MutableRefObject<string[]>
     onAbort: () => Promise<void>
     attachmentAdapter?: AttachmentAdapter
@@ -781,6 +786,7 @@ export function useHappyRuntime(props: {
      * soon as assistant-ui emits the corresponding AppendMessage.
      */
     pendingSendIntentRef?: React.MutableRefObject<ComposerSendIntent>
+    preparedSendsRef?: React.MutableRefObject<PreparedComposerSend[]>
 }) {
     const isRunning = props.isRunning ?? props.session.thinking
     const activeTurnStartedAt = props.session.activeTurnStartedAt ?? null
@@ -943,6 +949,13 @@ export function useHappyRuntime(props: {
 
     const onNew = useCallback(async (message: AppendMessage) => {
         const intent = consumeComposerSendIntent(props.pendingSendIntentRef)
+        const prepared = props.preparedSendsRef
+            ? consumePreparedComposerSend(
+                props.preparedSendsRef.current,
+                getTextFromParts(message.content),
+                message.attachments?.map((attachment) => attachment.id) ?? [],
+            )
+            : undefined
         // Reset before any early return so an empty submission, extraction
         // failure, or downstream exception cannot leak an explicit queue
         // gesture into the next ordinary send.
@@ -951,19 +964,27 @@ export function useHappyRuntime(props: {
             attachments,
             props.attachmentOrderRef?.current ?? [],
         )
-        if (!text && orderedAttachments.length === 0) return
+        if (!text && orderedAttachments.length === 0) {
+            if (prepared) void markSendRecoveryFailed(prepared.localId, 'not_sent').catch(() => {})
+            return
+        }
         // Resolve pendingSchedule at send time (Date.now()) so preset-type schedules
         // ("5 minutes from now") are relative to the actual send action, not the
         // moment the user clicked the preset button.
         const sendNow = Date.now()
-        const scheduledAt = resolvePendingSchedule(props.pendingScheduleRef?.current ?? null, sendNow)
-        props.onSendMessage(
-            text,
-            orderedAttachments.length > 0 ? orderedAttachments : undefined,
-            scheduledAt,
-            intent,
-        )
-    }, [props.attachmentOrderRef, props.onSendMessage, props.pendingScheduleRef, props.pendingSendIntentRef])
+        const scheduledAt = prepared
+            ? prepared.scheduledAt
+            : resolvePendingSchedule(props.pendingScheduleRef?.current ?? null, sendNow)
+        const sendAttachments = orderedAttachments.length > 0 ? orderedAttachments : undefined
+        if (prepared) {
+            await props.onSendMessage(
+                text, sendAttachments, scheduledAt, prepared.intent, prepared.localId,
+                prepared.draftRevision, prepared.scheduleRevision,
+            )
+        } else {
+            await props.onSendMessage(text, sendAttachments, scheduledAt, intent)
+        }
+    }, [props.attachmentOrderRef, props.onSendMessage, props.pendingScheduleRef, props.pendingSendIntentRef, props.preparedSendsRef])
 
     const onCancel = useCallback(async () => {
         await props.onAbort()

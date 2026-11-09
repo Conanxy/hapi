@@ -77,6 +77,10 @@ The Hub persists and enforces the lock across clients, restarts, and resume.
 
 - Message thread with infinite scroll.
 - Composer for sending messages.
+- Before dispatch, normal chat message text and file bytes are saved in this browser's
+  IndexedDB so failed or uncertain sends can be restored and edited. Sending
+  is blocked if this backup cannot be saved. Backups do not sync to other
+  devices and are removed if the browser's site data is cleared.
 - Scheduled text messages support the existing relative presets, a custom
   relative delay in five-minute steps, or a specific date and time. Relative
   delays are calculated when Send is pressed and are limited to seven days.

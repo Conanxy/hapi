@@ -56,6 +56,7 @@ request is made without a configured provider.
 
 - `HAPI_LISTEN_HOST` - HTTP bind address (default: 127.0.0.1).
 - `HAPI_LISTEN_PORT` - HTTP port (default: 3006).
+- `HAPI_PUBLIC_REQUEST_BODY_LIMIT_BYTES` - Maximum request body size advertised to clients in bytes. Set this to the smallest reverse-proxy limit if it is below the hub's 68 MiB limit; the hub cannot detect proxy configuration automatically.
 - `CORS_ORIGINS` - Comma-separated origins, or `*`.
 - `HAPI_HOME` - Data directory (default: ~/.hapi).
 - `DB_PATH` - SQLite database path (default: HAPI_HOME/hapi.db).

@@ -269,12 +269,14 @@ describe('ApiClient error mapping', () => {
     })
 
     it('forwards the selected delivery mode when sending a message', async () => {
-        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+        fetchMock
+            .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'ok', protocolVersion: 1 }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
 
         const api = new ApiClient('test-token')
         await api.sendMessage('session /?#', 'steer this', 'local-1', undefined, null, 'steer')
 
-        const [url, init] = fetchMock.mock.calls[0] ?? []
+        const [url, init] = fetchMock.mock.calls[1] ?? []
         expect(url).toBe('/api/sessions/session%20%2F%3F%23/messages')
         expect(init).toMatchObject({
             method: 'POST',
@@ -284,6 +286,38 @@ describe('ApiClient error mapping', () => {
                 deliveryMode: 'steer',
             })
         })
+    })
+
+    it('rejects an oversized UTF-8 message before posting it', async () => {
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+            status: 'ok',
+            protocolVersion: 1,
+            limits: { maxRequestBodyBytes: 40 },
+        }), { status: 200 }))
+
+        const api = new ApiClient('test-token')
+        await expect(api.sendMessage('session-1', '你好你好你好你好', 'local-1'))
+            .rejects.toMatchObject({ status: 413, code: 'request_body_too_large' })
+
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock.mock.calls[0]?.[0]).toBe('/health')
+    })
+
+    it('allows requests exactly at the advertised byte limit', async () => {
+        const body = JSON.stringify({ text: '你好', localId: 'local-1' })
+        fetchMock
+            .mockResolvedValueOnce(new Response(JSON.stringify({
+                status: 'ok',
+                protocolVersion: 1,
+                limits: { maxRequestBodyBytes: new TextEncoder().encode(body).length },
+            }), { status: 200 }))
+            .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+
+        const api = new ApiClient('test-token')
+        await api.sendMessage('session-1', '你好', 'local-1')
+
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/sessions/session-1/messages')
     })
 
     it('posts a steer for a queued message', async () => {

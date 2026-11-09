@@ -60,7 +60,7 @@ import {
     UnifiedButton,
     isComposerPrimaryFillHeight,
 } from '@/components/AssistantChat/ComposerButtons'
-import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
+import { resolvePendingSchedule, type PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import { SortableComposerAttachments } from '@/components/AssistantChat/SortableComposerAttachments'
 import { ComposerParkingContext } from '@/components/AssistantChat/composerParkingContext'
 import type { ScratchlistParkResult } from '@/lib/scratchlistAttachmentFlow'
@@ -71,10 +71,10 @@ import { getCodexComposerReasoningEffortOptions } from './codexReasoningEffortOp
 import { getDisplayedCodexServiceTier } from './codexFastMode'
 import { getPiThinkingLevelOptions, getHighestThinkingLevel, isThinkingLevelSupported } from './piThinkingLevelOptions'
 import { groupModelsByProvider } from './piModelGroups'
-import type { ApiClient } from '@/api/client'
+import { ApiError, serializeSendMessage, type ApiClient } from '@/api/client'
 import { useVoiceInputPreferences } from '@/hooks/useVoiceInputPreferences'
 import { useDictation } from '@/hooks/useDictation'
-import { resolveMessageDeliveryMode, type ComposerSendIntent } from '@/lib/messageDelivery'
+import { getRestoredComposerSendIntent, resolveMessageDeliveryMode, type ComposerSendIntent } from '@/lib/messageDelivery'
 import type { MessageDeliveryMode } from '@hapi/protocol'
 import { moveAttachmentId, orderItemsById, reconcileAttachmentOrder, replaceAttachmentId, type AttachmentDropPosition } from '@/lib/attachmentOrder'
 import {
@@ -85,6 +85,20 @@ import {
 } from '@/lib/textContext'
 import { useTextContextPreferences } from '@/hooks/useTextContextPreferences'
 import type { AttachmentRetryHandler } from './AttachmentItem'
+import { makeClientSideId } from '@/lib/messages'
+import { getDraftRevision, markDraftEdited } from '@/lib/composer-drafts'
+import { previewComposerMessage, type PreparedComposerSend } from '@/lib/composer-send-recovery'
+import {
+    discardSendRecovery,
+    listSendRecoveries,
+    markSendRecoveryFailed,
+    recoveryAttachmentFile,
+    saveSendRecovery,
+    subscribeSendRecoveries,
+    type SendRecovery,
+} from '@/lib/send-recovery'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { getMessageWindowState, removeOptimisticMessage } from '@/lib/message-window-store'
 
 export interface TextInputState {
     text: string
@@ -137,6 +151,7 @@ export type ComposerSendError = {
     deliveryMode?: MessageDeliveryMode
     /** True once the user has retried; retain UI but never restore this id again. */
     restoreSuppressed: boolean
+    recoveryId?: string
     action?: {
         label: string
         onClick: () => void
@@ -386,6 +401,7 @@ export function HappyComposer(props: {
     onVoiceSessionResolved?: (sessionId: string) => void
     // Schedule props (lifted from internal state when provided)
     pendingSchedule?: PendingSchedule | null
+    pendingScheduleRevisionRef?: MutableRefObject<number>
     onSchedule?: (pending: PendingSchedule) => void
     onClearSchedule?: () => void
     // Scratchlist drawer props - SessionChat owns the state. Threaded
@@ -423,6 +439,7 @@ export function HappyComposer(props: {
      * queue request after a scratchlist/scheduled/failed early path.
      */
     pendingSendIntentRef?: MutableRefObject<ComposerSendIntent>
+    preparedSendsRef?: MutableRefObject<PreparedComposerSend[]>
     /** Shared order ref consumed by useHappyRuntime when the message is sent. */
     attachmentOrderRef?: MutableRefObject<string[]>
     /** Chip hover / aria-label resolver (SessionChat → useSessions). */
@@ -483,6 +500,7 @@ export function HappyComposer(props: {
         onClearSendError,
         onSuppressSendErrorRestore,
         pendingSendIntentRef,
+        preparedSendsRef,
         attachmentOrderRef: externalAttachmentOrderRef,
         resolveSessionMentionTooltip,
     } = props
@@ -582,6 +600,22 @@ export function HappyComposer(props: {
     }, [dictationActive, voiceInput.voiceMode, voiceStatus, onVoiceToggle, dictation.status, dictation.toggle])
 
     const [isParkingScratchlist, setIsParkingScratchlist] = useState(false)
+    const [isPreparingSend, setIsPreparingSend] = useState(false)
+    const [isRestoringRecovery, setIsRestoringRecovery] = useState(false)
+    const [recoveries, setRecoveries] = useState<SendRecovery[]>([])
+    const [recoveryError, setRecoveryError] = useState<string | null>(null)
+    const [editingRecoveryId, setEditingRecoveryId] = useState<string | null>(null)
+    const [discardRecoveryId, setDiscardRecoveryId] = useState<string | null>(null)
+    const [discardingRecovery, setDiscardingRecovery] = useState(false)
+    const preparingSendRef = useRef(false)
+    const editingRecoveryIdRef = useRef<string | null>(null)
+    const recoverySessionRef = useRef(sessionId)
+    const mountedRef = useRef(true)
+    recoverySessionRef.current = sessionId
+    useEffect(() => {
+        mountedRef.current = true
+        return () => { mountedRef.current = false }
+    }, [])
     const [textContextOpen, setTextContextOpen] = useState(false)
     const parkInFlightRef = useRef(false)
     const onScratchlistParkingChange = props.onScratchlistParkingChange
@@ -664,7 +698,8 @@ export function HappyComposer(props: {
 
     const recordUserEdit = useCallback(() => {
         userEditGenerationRef.current += 1
-    }, [])
+        if (sessionId) markDraftEdited(sessionId)
+    }, [sessionId])
 
     const handleUserEdit = useCallback(() => {
         recordUserEdit()
@@ -698,6 +733,7 @@ export function HappyComposer(props: {
     latestComposerTextRef.current = composerText
     const attachmentDraftsRef = useRef(attachmentDrafts)
     attachmentDraftsRef.current = attachmentDrafts
+    const sentTextRef = useRef<{ sessionId: string; text: string } | null>(null)
     const draftHydration = useComposerDraft(
         sessionId,
         composerText,
@@ -705,6 +741,7 @@ export function HappyComposer(props: {
         props.canRestoreAttachments ?? active,
         (text) => api.composer().setText(text),
         (file) => api.composer().addAttachment(file),
+        sentTextRef,
     )
     const canHydrateAttachments = props.canRestoreAttachments ?? active
     const hiddenAttachmentStatePending =
@@ -730,6 +767,27 @@ export function HappyComposer(props: {
             scratchlistMode: props.scratchlistMode ?? false,
         })
     const canSend = (hasText || hasAnyAttachments) && attachmentsReady && !controlsDisabled
+        && !isPreparingSend && !isRestoringRecovery
+
+    useEffect(() => {
+        if (!sessionId || !preparedSendsRef) return
+        let active = true
+        let version = 0
+        const refresh = () => {
+            const currentVersion = ++version
+            void listSendRecoveries(sessionId).then((records) => {
+                if (active && currentVersion === version) setRecoveries(records)
+            }).catch(() => {
+                if (active && currentVersion === version) setRecoveryError(t('chat.recovery.readFailed'))
+            })
+        }
+        const unsubscribe = subscribeSendRecoveries(sessionId, refresh)
+        refresh()
+        return () => {
+            active = false
+            unsubscribe()
+        }
+    }, [preparedSendsRef, sessionId, t])
 
     useEffect(() => {
         if (!sessionId) return
@@ -836,6 +894,10 @@ export function HappyComposer(props: {
 
         restoredErrorIdRef.current = sendError.id
         restoredErrorSnapshotRef.current = { id: sendError.id, text: sendError.text, observed: false }
+        if (sendError.recoveryId) {
+            editingRecoveryIdRef.current = sendError.recoveryId
+            setEditingRecoveryId(sendError.recoveryId)
+        }
         api.composer().setText(sendError.text)
         // `scheduledAt` is already absolute (presets resolve at send time), so
         // restore it through the normal controlled schedule path in the same
@@ -871,12 +933,15 @@ export function HappyComposer(props: {
     // already present at mount are the baseline; assistant-ui's send clear only
     // removes IDs and therefore does not look like a user addition.
     useEffect(() => {
+        let added = false
         for (const attachment of attachments) {
             if (observedAttachmentIdsRef.current.has(attachment.id)) continue
             observedAttachmentIdsRef.current.add(attachment.id)
             userAttachmentGenerationRef.current += 1
+            added = true
         }
-    }, [attachments])
+        if (added && sessionId) markDraftEdited(sessionId)
+    }, [attachments, sessionId])
 
     useEffect(() => {
         if (richMentionsEnabled) {
@@ -1195,6 +1260,56 @@ export function HappyComposer(props: {
         if (pendingSendIntentRef) pendingSendIntentRef.current = 'default'
     }, [pendingSendIntentRef])
 
+    const handleRestoreRecovery = useCallback(async (record: SendRecovery) => {
+        if (isRestoringRecovery || isPreparingSend) return
+        if (record.attachments.length > 0 && props.canRestoreAttachments === false) {
+            setRecoveryError(t('chat.recovery.reopenFirst'))
+            return
+        }
+        const current = api.composer().getState()
+        if (!draftHydration.complete || current.text.length > 0 || current.attachments.length > 0 || pendingSchedule) {
+            setRecoveryError(t('chat.recovery.draftNotEmpty'))
+            return
+        }
+
+        setRecoveryError(null)
+        setIsRestoringRecovery(true)
+        editingRecoveryIdRef.current = record.id
+        setEditingRecoveryId(record.id)
+        onClearSendError?.()
+        if (pendingSendIntentRef) {
+            pendingSendIntentRef.current = getRestoredComposerSendIntent(record.deliveryMode)
+        }
+        api.composer().setText(record.text)
+        if (record.pendingSchedule) setPendingSchedule(record.pendingSchedule)
+        try {
+            for (const attachment of record.attachments) {
+                if (!mountedRef.current || recoverySessionRef.current !== record.sessionId) return
+                await api.composer().addAttachment(recoveryAttachmentFile(attachment))
+            }
+            if (!mountedRef.current || recoverySessionRef.current !== record.sessionId) return
+            const failed = getMessageWindowState(record.sessionId).messages.find((message) => (
+                message.id === record.id && message.localId === record.id && message.status === 'failed'
+            ))
+            if (failed) removeOptimisticMessage(record.sessionId, record.id)
+        } catch {
+            if (mountedRef.current) setRecoveryError(t('chat.recovery.restoreFailed'))
+        } finally {
+            if (mountedRef.current) setIsRestoringRecovery(false)
+        }
+    }, [
+        api,
+        draftHydration.complete,
+        isPreparingSend,
+        isRestoringRecovery,
+        onClearSendError,
+        pendingSchedule,
+        pendingSendIntentRef,
+        props.canRestoreAttachments,
+        setPendingSchedule,
+        t,
+    ])
+
     const handleSend = useCallback(async (intent: ComposerSendIntent = 'default') => {
         if (dictationActive && (dictation.status === 'connected' || dictation.status === 'connecting')) {
             const canDirectSend = dictation.status === 'connected'
@@ -1288,6 +1403,114 @@ export function HappyComposer(props: {
             }
             return
         }
+        if (!canSend || preparingSendRef.current) return
+        if (!hasText && !hasAttachments && draftHydration.hasStoredAttachments) {
+            await props.onResumeStoredDraft?.()
+            return
+        }
+
+        const effectiveIntent = pendingSchedule == null ? restoredIntent : 'default'
+        let preparedLocalId: string | undefined
+        if (sessionId && preparedSendsRef) {
+            preparingSendRef.current = true
+            setIsPreparingSend(true)
+            setRecoveryError(null)
+            const snapshot = api.composer().getState()
+            const ordered = orderItemsById(snapshot.attachments, attachmentOrderRef.current)
+            const interactionSnapshot = {
+                edit: userEditGenerationRef.current,
+                schedule: userScheduleGenerationRef.current,
+                scheduleRevision: props.pendingScheduleRevisionRef?.current,
+                attachments: userAttachmentGenerationRef.current,
+            }
+            const unchanged = () => mountedRef.current
+                && recoverySessionRef.current === sessionId
+                && composerParkSnapshotUnchanged(snapshot, api.composer().getState())
+                && interactionSnapshot.edit === userEditGenerationRef.current
+                && interactionSnapshot.schedule === userScheduleGenerationRef.current
+                && interactionSnapshot.scheduleRevision === props.pendingScheduleRevisionRef?.current
+                && interactionSnapshot.attachments === userAttachmentGenerationRef.current
+            try {
+                if (!snapshot.canSend) {
+                    setRecoveryError(t('chat.recovery.sendFailed'))
+                    return
+                }
+                const draftFiles = ordered.flatMap((attachment) => {
+                    if (!attachment.file) return []
+                    return [{ id: attachment.id, file: attachment.file }]
+                })
+                if (draftFiles.length !== ordered.length) {
+                    setRecoveryError(t('chat.recovery.attachmentUnavailable'))
+                    return
+                }
+                const localId = makeClientSideId('local')
+                const scheduledAt = resolvePendingSchedule(pendingSchedule, Date.now())
+                const deliveryMode = resolveMessageDeliveryMode({
+                    agentFlavor: props.agentFlavor,
+                    isSessionThinking: props.thinking ?? false,
+                    intent: effectiveIntent,
+                    scheduledAt,
+                })
+                const preview = previewComposerMessage(snapshot.text, ordered)
+                const body = serializeSendMessage(
+                    preview.text,
+                    localId,
+                    preview.attachments.length ? preview.attachments : undefined,
+                    scheduledAt,
+                    deliveryMode,
+                )
+                if (props.voiceTranscriptionApi) {
+                    await props.voiceTranscriptionApi.assertRequestBodySize(new Blob([body]).size)
+                }
+                if (!unchanged()) {
+                    if (mountedRef.current) setRecoveryError(t('chat.recovery.draftChanged'))
+                    return
+                }
+                await saveSendRecovery({
+                    id: localId,
+                    sessionId,
+                    text: snapshot.text,
+                    attachments: draftFiles,
+                    pendingSchedule: scheduledAt === null ? null : { type: 'absolute', ms: scheduledAt },
+                    deliveryMode,
+                    replacesId: editingRecoveryIdRef.current ?? undefined,
+                })
+                if (!unchanged()) {
+                    if (mountedRef.current) {
+                        await discardSendRecovery(localId)
+                        setRecoveryError(t('chat.recovery.draftChanged'))
+                    } else {
+                        await markSendRecoveryFailed(localId, 'not_sent')
+                    }
+                    return
+                }
+                if (!api.composer().getState().canSend) {
+                    await discardSendRecovery(localId)
+                    setRecoveryError(t('chat.recovery.sendFailed'))
+                    return
+                }
+                preparedLocalId = localId
+                preparedSendsRef.current.push({
+                    localId,
+                    text: snapshot.text.trim(),
+                    attachmentIds: snapshot.attachments.map((attachment) => attachment.id),
+                    intent: effectiveIntent,
+                    scheduledAt,
+                    draftRevision: getDraftRevision(sessionId),
+                    scheduleRevision: interactionSnapshot.scheduleRevision,
+                })
+            } catch (error) {
+                if (mountedRef.current) {
+                    setRecoveryError(error instanceof ApiError && error.status === 413
+                        ? t('chat.sendError.tooLarge')
+                        : t('chat.recovery.saveFailed'))
+                }
+                return
+            } finally {
+                preparingSendRef.current = false
+                if (mountedRef.current) setIsPreparingSend(false)
+            }
+        }
         // A retry intentionally clears composer state synchronously. It is
         // neither a replacement draft nor a dismissal: route onSuccess/onError
         // owns the inline-error transition for this new attempt. Drop the old
@@ -1302,12 +1525,7 @@ export function HappyComposer(props: {
         // Scheduled sends retain their existing route. The same is true for a
         // scratchlist route above; only an immediate chat submit may carry the
         // explicit queue intent to SessionChat.
-        const effectiveIntent = pendingSchedule == null ? restoredIntent : 'default'
         try {
-            if (!hasText && !hasAttachments && draftHydration.hasStoredAttachments) {
-                await props.onResumeStoredDraft?.()
-                return
-            }
             // Must be adjacent to send(): useHappyRuntime consumes and resets
             // this ref synchronously from assistant-ui's onNew callback.
             if (pendingSendIntentRef) pendingSendIntentRef.current = effectiveIntent
@@ -1315,9 +1533,22 @@ export function HappyComposer(props: {
             // when the submit action is dispatched, rather than waiting for a
             // queued or slow network request to settle.
             setIsExpanded(false)
+            if (preparedLocalId && sessionId) {
+                sentTextRef.current = { sessionId, text: api.composer().getState().text }
+            }
             api.composer().send()
+            editingRecoveryIdRef.current = null
+            setEditingRecoveryId(null)
         } catch (error) {
             resetPendingSendIntent()
+            sentTextRef.current = null
+            if (preparedLocalId && preparedSendsRef) {
+                const index = preparedSendsRef.current.findIndex((item) => item.localId === preparedLocalId)
+                if (index >= 0) preparedSendsRef.current.splice(index, 1)
+                void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
+                setRecoveryError(t('chat.recovery.sendFailed'))
+                return
+            }
             throw error
         }
         // SessionChat owns clearing the schedule — it clears only after awaiting
@@ -1347,7 +1578,12 @@ export function HappyComposer(props: {
         sendError,
         attachmentOrderRef,
         pendingSendIntentRef,
+        preparedSendsRef,
         resetPendingSendIntent,
+        sessionId,
+        t,
+        props.voiceTranscriptionApi,
+        props.pendingScheduleRevisionRef,
         dictationActive,
         dictation.status,
         dictation.toggle,
@@ -2416,6 +2652,13 @@ export function HappyComposer(props: {
     const editorClassName = isExpanded
         ? 'h-full min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
         : 'max-h-[7.5rem] min-h-[1.5rem] flex-1 overflow-y-auto whitespace-pre-wrap break-words bg-transparent text-base leading-snug text-[var(--app-fg)] focus:outline-none'
+    const supersededRecoveryIds = new Set(recoveries.flatMap((record) => record.replacesId ? [record.replacesId] : []))
+    const visibleRecoveries = recoveries.filter((record) => (
+        record.status !== 'pending'
+        && record.id !== editingRecoveryId
+        && !supersededRecoveryIds.has(record.id)
+    ))
+    const editingRecovery = recoveries.find((record) => record.id === editingRecoveryId)
 
     return (
         <ComposerParkingContext.Provider value={isParkingScratchlist}>
@@ -2467,6 +2710,60 @@ export function HappyComposer(props: {
                     {dictationActive && dictation.error ? (
                         <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-red-600">
                             {dictation.error}
+                        </div>
+                    ) : null}
+
+                    {recoveryError ? (
+                        <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-red-600">
+                            {recoveryError}
+                        </div>
+                    ) : null}
+
+                    {editingRecovery?.status === 'unknown' ? (
+                        <div role="alert" className="mb-2 rounded-md bg-[var(--app-subtle-bg)] px-3 py-2 text-sm text-amber-700">
+                            {t('chat.sendError.unknown')}
+                        </div>
+                    ) : null}
+
+                    {visibleRecoveries.length > 0 ? (
+                        <div className="mb-2 max-h-48 space-y-2 overflow-y-auto" aria-label={t('chat.recovery.title')}>
+                            {visibleRecoveries.map((record) => (
+                                <div key={record.id} className="rounded-md border border-red-300 bg-[var(--app-bg)] px-3 py-2 text-sm">
+                                    <div className="font-medium text-red-600">
+                                        {record.status === 'too_large'
+                                            ? t('chat.sendError.tooLarge')
+                                            : record.status === 'unknown'
+                                                ? t('chat.sendError.unknown')
+                                                : t('chat.recovery.notSent')}
+                                    </div>
+                                    {record.text ? (
+                                        <div className="mt-1 truncate text-[var(--app-fg)]">{record.text}</div>
+                                    ) : null}
+                                    {record.attachments.length > 0 ? (
+                                        <div className="mt-1 break-words text-xs text-[var(--app-hint)]">
+                                            {t('chat.recovery.files', { files: record.attachments.map((file) => file.name).join(', ') })}
+                                        </div>
+                                    ) : null}
+                                    <div className="mt-2 flex flex-wrap gap-3">
+                                        <button
+                                            type="button"
+                                            disabled={isPreparingSend || isRestoringRecovery}
+                                            onClick={() => { void handleRestoreRecovery(record) }}
+                                            className="text-xs font-medium text-[var(--app-link)] hover:underline disabled:opacity-50"
+                                        >
+                                            {t('chat.recovery.edit')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={isPreparingSend || isRestoringRecovery}
+                                            onClick={() => setDiscardRecoveryId(record.id)}
+                                            className="text-xs text-[var(--app-hint)] hover:text-red-600 disabled:opacity-50"
+                                        >
+                                            {t('chat.recovery.delete')}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     ) : null}
 
@@ -2692,6 +2989,25 @@ export function HappyComposer(props: {
             open={textContextOpen}
             onOpenChange={setTextContextOpen}
             onAdd={handleAddTextContext}
+        />
+        <ConfirmDialog
+            isOpen={discardRecoveryId !== null}
+            onClose={() => setDiscardRecoveryId(null)}
+            title={t('chat.recovery.deleteTitle')}
+            description={t('chat.recovery.deleteDescription')}
+            confirmLabel={t('chat.recovery.delete')}
+            confirmingLabel={t('chat.recovery.deleting')}
+            destructive
+            isPending={discardingRecovery}
+            onConfirm={async () => {
+                if (!discardRecoveryId) return
+                setDiscardingRecovery(true)
+                try {
+                    await discardSendRecovery(discardRecoveryId)
+                } finally {
+                    setDiscardingRecovery(false)
+                }
+            }}
         />
         </ComposerParkingContext.Provider>
     )

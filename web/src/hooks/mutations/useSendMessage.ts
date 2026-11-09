@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
-import type { ApiClient } from '@/api/client'
+import { ApiError, type ApiClient } from '@/api/client'
 import type { AttachmentMetadata, DecryptedMessage } from '@/types/api'
 import { makeClientSideId } from '@/lib/messages'
 import {
@@ -12,6 +12,7 @@ import {
 import { usePlatform } from '@/hooks/usePlatform'
 import type { MessageDeliveryMode } from '@hapi/protocol'
 import { getRetryDeliveryMode } from '@/lib/messageDelivery'
+import { completeSendRecovery, markSendRecoveryFailed, markSendRecoveryRetryStarted } from '@/lib/send-recovery'
 
 type SendMessageInput = {
     sessionId: string
@@ -21,6 +22,7 @@ type SendMessageInput = {
     attachments?: AttachmentMetadata[]
     scheduledAt?: number | null
     deliveryMode: MessageDeliveryMode
+    draftGuard?: { sessionId: string; revision: number }
 }
 
 export type SendMessageAcceptance = {
@@ -56,11 +58,8 @@ type BlockedReason = 'no-api' | 'no-session' | 'pending'
  *   recovery retains queue, while turn-scoped steer safely degrades to queue
  *   because the original Pi generation can no longer be proven.
  *
- * Only fired for text-only sends.  Sends with attachments fall back to
- * the legacy failed-bubble UX (the optimistic row stays as `failed` and
- * the user retries via the in-thread retry button); the composer-restore
- * path can't reinstate uploaded attachment metadata, so doing the swap
- * for attachment sends would silently drop the attachments.
+ * Attachment failures keep the optimistic row and also notify the composer
+ * so the reason is visible alongside the durable recovery.
  */
 export type SendErrorInfo = {
     sessionId: string
@@ -70,6 +69,8 @@ export type SendErrorInfo = {
     deliveryMode: MessageDeliveryMode
     /** True only after the message mutation was started. */
     mutationStarted: boolean
+    hasAttachments?: boolean
+    localId?: string
 }
 
 export type ResolvedSession = {
@@ -96,7 +97,7 @@ type UseSendMessageOptions = {
         context: SessionResolvedContext,
     ) => void | Promise<void | SessionResolution>
     onBlocked?: (reason: BlockedReason) => void
-    onSuccess?: (sessionId: string) => void
+    onSuccess?: (sessionId: string, draftGuard?: { sessionId: string; revision: number }) => void
     onError?: (info: SendErrorInfo) => void
     isSessionThinking?: boolean
 }
@@ -194,6 +195,8 @@ export function useSendMessage(
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode?: MessageDeliveryMode,
+        preparedLocalId?: string,
+        draftRevision?: number,
     ) => Promise<SendMessageAcceptance | false>
     retryMessage: (localId: string) => boolean
     isSending: boolean
@@ -230,9 +233,20 @@ export function useSendMessage(
                 context?.successStatus ?? 'sent'
             )
             haptic.notification('success')
-            options?.onSuccess?.(input.sessionId)
+            void completeSendRecovery(input.localId).catch(() => {})
+            if (input.draftGuard) {
+                options?.onSuccess?.(input.sessionId, input.draftGuard)
+            } else {
+                options?.onSuccess?.(input.sessionId)
+            }
         },
         onError: (error, input) => {
+            const recoveryStatus = error instanceof ApiError && error.status === 413
+                ? 'too_large'
+                : error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408
+                    ? 'not_sent'
+                    : 'unknown'
+            void markSendRecoveryFailed(input.localId, recoveryStatus, input.sessionId).catch(() => {})
             // Attachment sends keep the legacy failed-bubble UX: the
             // composer-restore path can only re-seat text + scheduledAt,
             // not the uploaded attachment metadata.  Removing the row
@@ -243,6 +257,16 @@ export function useSendMessage(
             if (input.attachments && input.attachments.length > 0) {
                 updateMessageStatus(input.sessionId, input.localId, 'failed')
                 haptic.notification('error')
+                options?.onError?.({
+                    sessionId: input.sessionId,
+                    text: input.text,
+                    error,
+                    scheduledAt: input.scheduledAt ?? null,
+                    deliveryMode: input.deliveryMode,
+                    mutationStarted: true,
+                    hasAttachments: true,
+                    localId: input.localId,
+                })
                 return
             }
             // Text-only sends use the composer-restore path: drop the
@@ -261,6 +285,7 @@ export function useSendMessage(
                 scheduledAt: input.scheduledAt ?? null,
                 deliveryMode: input.deliveryMode,
                 mutationStarted: true,
+                localId: input.localId,
             })
         },
     })
@@ -270,22 +295,27 @@ export function useSendMessage(
         attachments?: AttachmentMetadata[],
         scheduledAt?: number | null,
         deliveryMode: MessageDeliveryMode = 'queue',
+        preparedLocalId?: string,
+        draftRevision?: number,
     ): Promise<SendMessageAcceptance | false> => {
         if (!api) {
+            if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
             options?.onBlocked?.('no-api')
             haptic.notification('error')
             return false
         }
         if (!sessionId) {
+            if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
             options?.onBlocked?.('no-session')
             haptic.notification('error')
             return false
         }
         if (mutation.isPending || resolveGuardRef.current) {
+            if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
             options?.onBlocked?.('pending')
             return false
         }
-        const localId = makeClientSideId('local')
+        const localId = preparedLocalId ?? makeClientSideId('local')
         const createdAt = Date.now()
         let targetSessionId = sessionId
         let sendAttachments = attachments
@@ -304,6 +334,9 @@ export function useSendMessage(
                         { text, attachments },
                     )
                     if (resolution?.deferUntilDraftHydrated) {
+                        if (preparedLocalId) {
+                            void markSendRecoveryFailed(preparedLocalId, 'not_sent', targetSessionId).catch(() => {})
+                        }
                         // Target composer still needs to hydrate/re-upload files.
                         return false
                     }
@@ -312,6 +345,7 @@ export function useSendMessage(
                     }
                 }
             } catch (error) {
+                if (preparedLocalId) void markSendRecoveryFailed(preparedLocalId, 'not_sent').catch(() => {})
                 haptic.notification('error')
                 console.error('Failed to resolve session before send:', error)
                 // #918: surface the failure via onError so the route can render
@@ -331,6 +365,8 @@ export function useSendMessage(
                     scheduledAt: scheduledAt ?? null,
                     deliveryMode,
                     mutationStarted: false,
+                    hasAttachments: Boolean(attachments?.length),
+                    localId: preparedLocalId,
                 })
                 return false
             } finally {
@@ -346,6 +382,9 @@ export function useSendMessage(
             attachments: sendAttachments,
             scheduledAt,
             deliveryMode,
+            draftGuard: preparedLocalId && draftRevision !== undefined
+                ? { sessionId, revision: draftRevision }
+                : undefined,
         })
         return { attemptId: localId }
     }
@@ -367,19 +406,42 @@ export function useSendMessage(
         }
 
         const message = findMessageByLocalId(sessionId, localId)
-        if (!message?.originalText) return false
+        if (!message || (!message.originalText && !getMessageAttachments(message)?.length)) return false
 
-        updateMessageStatus(sessionId, localId, 'sending')
-
-        mutation.mutate({
-            sessionId,
-            text: message.originalText,
-            localId,
-            createdAt: message.createdAt,
-            attachments: getMessageAttachments(message),
-            scheduledAt: message.scheduledAt ?? null,
-            deliveryMode: getRetryDeliveryMode(getMessageDeliveryMode(message)),
-        })
+        const attachments = getMessageAttachments(message)
+        const text = message.originalText ?? ''
+        const deliveryMode = getRetryDeliveryMode(getMessageDeliveryMode(message))
+        resolveGuardRef.current = true
+        setIsResolving(true)
+        void (async () => {
+            try {
+                await markSendRecoveryRetryStarted(localId, sessionId)
+                updateMessageStatus(sessionId, localId, 'sending')
+                mutation.mutate({
+                    sessionId,
+                    text,
+                    localId,
+                    createdAt: message.createdAt,
+                    attachments,
+                    scheduledAt: message.scheduledAt ?? null,
+                    deliveryMode,
+                })
+            } catch {
+                options?.onError?.({
+                    sessionId,
+                    text,
+                    error: new ApiError('Message recovery storage is unavailable', 0, 'recovery_storage_unavailable'),
+                    scheduledAt: message.scheduledAt ?? null,
+                    deliveryMode,
+                    mutationStarted: false,
+                    hasAttachments: Boolean(attachments?.length),
+                    localId,
+                })
+            } finally {
+                resolveGuardRef.current = false
+                setIsResolving(false)
+            }
+        })()
         return true
     }
 

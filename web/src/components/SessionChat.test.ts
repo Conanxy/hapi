@@ -13,6 +13,7 @@ import {
     resolveEffortForModelChange,
     resolveLatestCompletedBoundaryIdForView,
     shouldAutoClearPendingSchedule,
+    shouldClearPendingScheduleAfterSend,
     shouldClearReasoningEffortForModelChange,
     shouldRouteToScratchlist,
     isRewindForkFallbackError,
@@ -20,6 +21,13 @@ import {
 import { ApiError } from '@/api/client'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import type { AttachmentMetadata, DecryptedMessage } from '@/types/api'
+
+describe('shouldClearPendingScheduleAfterSend', () => {
+    it('clears only the schedule associated with the accepted send', () => {
+        expect(shouldClearPendingScheduleAfterSend(4, 4)).toBe(true)
+        expect(shouldClearPendingScheduleAfterSend(4, 5)).toBe(false)
+    })
+})
 
 describe('isRewindForkFallbackError', () => {
     it('recognizes the structured safe-Fork boundary code', () => {

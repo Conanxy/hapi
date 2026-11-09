@@ -123,6 +123,33 @@ describe('attachmentAdapter', () => {
         expect(uploadFile).not.toHaveBeenCalled()
     })
 
+    it('rejects an upload above the advertised request limit before reading the file', async () => {
+        const { ApiError } = await import('@/api/client')
+        const { createAttachmentAdapter } = await import('./attachmentAdapter')
+        const file = new File(['data'], '测试.txt', { type: 'text/plain' })
+        const assertRequestBodySize = vi.fn(async () => {
+            throw new ApiError('too large', 413, 'request_body_too_large')
+        })
+        const uploadFile = vi.fn()
+        const readAsDataURL = vi.spyOn(FileReader.prototype, 'readAsDataURL')
+        const adapter = createAttachmentAdapter({ assertRequestBodySize, uploadFile } as never, 'session-1')
+        const emitted: Record<string, unknown>[] = []
+        for await (const attachment of adapter.add({ file }) as AsyncIterable<Record<string, unknown>>) {
+            emitted.push(attachment)
+        }
+
+        const emptyBody = JSON.stringify({ filename: file.name, content: '', mimeType: file.type })
+        expect(assertRequestBodySize).toHaveBeenCalledWith(new Blob([emptyBody]).size + 8)
+        expect(emitted.at(-1)).toMatchObject({
+            status: { type: 'incomplete', reason: 'error' },
+            errorCode: 'request_body_too_large',
+            retryable: false,
+        })
+        expect(readAsDataURL).not.toHaveBeenCalled()
+        expect(uploadFile).not.toHaveBeenCalled()
+        readAsDataURL.mockRestore()
+    })
+
     it('uploads an image when the initial preview read fails', async () => {
         let readCount = 0
         class FileReaderMock {

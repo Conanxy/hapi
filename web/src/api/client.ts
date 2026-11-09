@@ -165,6 +165,22 @@ export class ApiError extends Error {
     }
 }
 
+export function serializeSendMessage(
+    text: string,
+    localId?: string | null,
+    attachments?: AttachmentMetadata[],
+    scheduledAt?: number | null,
+    deliveryMode?: MessageDeliveryMode,
+): string {
+    return JSON.stringify({
+        text,
+        localId: localId ?? undefined,
+        attachments: attachments ?? undefined,
+        scheduledAt: scheduledAt ?? undefined,
+        deliveryMode: deliveryMode ?? undefined,
+    })
+}
+
 export class ApiClient {
     async getNativePushDevices(): Promise<NativePushDevicesResponse> {
         return await this.request<NativePushDevicesResponse>('/api/devices')
@@ -181,6 +197,9 @@ export class ApiClient {
     private readonly baseUrl: string | null
     private readonly getToken: (() => string | null) | null
     private readonly onUnauthorized: (() => Promise<string | null>) | null
+    private requestBodyLimitBytes: number | null = null
+    private requestBodyLimitLoaded = false
+    private requestBodyLimitPromise: Promise<void> | null = null
 
     constructor(token: string, options?: ApiClientOptions) {
         this.token = token
@@ -302,7 +321,26 @@ export class ApiClient {
     }
 
     async getHealth(): Promise<HubHealthResponse> {
-        return await this.request<HubHealthResponse>('/health')
+        const health = await this.request<HubHealthResponse>('/health')
+        const limit = health.limits?.maxRequestBodyBytes
+        this.requestBodyLimitBytes = typeof limit === 'number' && Number.isSafeInteger(limit) && limit > 0
+            ? limit
+            : null
+        this.requestBodyLimitLoaded = true
+        return health
+    }
+
+    async assertRequestBodySize(bytes: number): Promise<void> {
+        if (!this.requestBodyLimitLoaded) {
+            this.requestBodyLimitPromise ??= this.getHealth()
+                .then(() => {})
+                .catch(() => {})
+                .finally(() => { this.requestBodyLimitPromise = null })
+            await this.requestBodyLimitPromise
+        }
+        if (this.requestBodyLimitBytes !== null && bytes > this.requestBodyLimitBytes) {
+            throw new ApiError('Request body exceeds the configured limit', 413, 'request_body_too_large')
+        }
     }
 
     async getPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
@@ -548,9 +586,11 @@ export class ApiClient {
     }
 
     async uploadFile(sessionId: string, filename: string, content: string, mimeType: string): Promise<UploadFileResponse> {
+        const body = JSON.stringify({ filename, content, mimeType })
+        await this.assertRequestBodySize(new Blob([body]).size)
         return await this.request<UploadFileResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/upload`, {
             method: 'POST',
-            body: JSON.stringify({ filename, content, mimeType })
+            body
         })
     }
 
@@ -588,15 +628,11 @@ export class ApiClient {
         scheduledAt?: number | null,
         deliveryMode?: MessageDeliveryMode,
     ): Promise<void> {
+        const body = serializeSendMessage(text, localId, attachments, scheduledAt, deliveryMode)
+        await this.assertRequestBodySize(new Blob([body]).size)
         await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
             method: 'POST',
-            body: JSON.stringify({
-                text,
-                localId: localId ?? undefined,
-                attachments: attachments ?? undefined,
-                scheduledAt: scheduledAt ?? undefined,
-                deliveryMode: deliveryMode ?? undefined,
-            })
+            body
         })
     }
 

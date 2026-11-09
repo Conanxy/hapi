@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { serveStatic } from 'hono/bun'
 import { getConfiguration } from '../configuration'
+import { getPublicRequestBodyLimitBytes, HUB_REQUEST_BODY_LIMIT_BYTES } from '../config/requestBodyLimits'
 import { PROTOCOL_VERSION } from '@hapi/protocol'
 import { buildGeminiLiveSetupMessage, QWEN_REALTIME_MODEL } from '@hapi/protocol/voice'
 import { getProviderEnvironment } from '../config/providerCredentials'
@@ -259,6 +260,9 @@ function createWebApp(options: {
         capabilities: {
             workGraph: true,
             titleSuggestion: readTitleProviderConfig() !== null
+        },
+        limits: {
+            maxRequestBodyBytes: getPublicRequestBodyLimitBytes()
         }
     }))
 
@@ -463,7 +467,7 @@ export async function startWebServer(options: {
         hostname: configuration.listenHost,
         port: configuration.listenPort,
         idleTimeout: Math.max(30, socketHandler.idleTimeout),
-        maxRequestBodySize: Math.max(socketHandler.maxRequestBodySize, 68 * 1024 * 1024),
+        maxRequestBodySize: Math.max(socketHandler.maxRequestBodySize, HUB_REQUEST_BODY_LIMIT_BYTES),
         websocket: {
             ...originalWsHandler,
             // Advertise permessage-deflate. Negotiation alone compresses
