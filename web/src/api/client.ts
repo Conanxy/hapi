@@ -13,6 +13,7 @@ import type {
     CopilotAgentMode,
     FileSearchResponse,
     MachinesResponse,
+    MessageContextResponse,
     MessagesResponse,
     OpencodeImportSessionsResponse,
     OpencodeLocalSessionsResponse,
@@ -29,12 +30,15 @@ import type {
     HapiSessionExportResponse,
     HubHealthResponse,
     SessionResponse,
+    SessionContentMatchesResponse,
     SessionTitleSuggestionResponse,
-    SessionsResponse
+    SessionsResponse,
+    SessionContentSearchResponse
 } from '@/types/api'
 import type {
     AgyModelsResponse,
     AgentAvailabilityResponse,
+    AgentQuotasResponse,
     CodexModelsResponse,
     CursorMigrateOutcome,
     CursorMigrateToAcpRequest,
@@ -48,6 +52,8 @@ import type {
     KimiModelsResponse,
     CopilotModelsResponse,
     GrokReasoningEffortResponse,
+    CopilotReasoningEffortResponse,
+    KimiReasoningEffortResponse,
     ListDirectoryResponse,
     MachineListDirectoryResponse,
     MachinePathsExistsResponse,
@@ -64,10 +70,12 @@ import type {
     NativePushTestRequest,
     NativePushTestResponse,
     UpdateHubSettingsRequest,
+    UsageQuotasResponse,
     UsageSummaryResponse,
     UploadFileResponse
 } from '@hapi/protocol/apiTypes'
 import { fetchThroughAuthProxy } from '@/api/authProxy'
+import { FOLLOW_SESSION_REDIRECTS_HEADER } from '@hapi/protocol'
 import type { SessionReadState, SessionReadStateRequest, AgentFlavor, MessageDeliveryMode } from '@hapi/protocol'
 import type { CancelMessageResponse, SteerQueuedMessageResponse } from '@hapi/protocol/schemas'
 import type { TranscriptionMode, TranscriptionProvider, TranscriptionProviderInfo } from '@hapi/protocol/voice'
@@ -127,6 +135,58 @@ export interface TranscriptionCredentialsUpdate {
     qwenRealtime?: string | null
     /** null resets to the hub default (1800s) */
     elevenLabsMaxDurationSeconds?: number | null
+}
+
+// Keep scoped content-search bodies comfortably below the Hub's 256 KiB
+// request limit. The remaining space covers the query, limit, and JSON body
+// framing; callers still get one merged result set for large visible scopes.
+const CONTENT_SEARCH_SCOPE_CHUNK_BYTES = 192 * 1024
+
+function chunkContentSearchSessionIds(sessionIds: readonly string[]): string[][] {
+    if (sessionIds.length === 0) return []
+
+    const encoder = new TextEncoder()
+    const chunks: string[][] = []
+    let current: string[] = []
+    let currentBytes = 2 // []
+
+    for (const sessionId of sessionIds) {
+        const itemBytes = encoder.encode(JSON.stringify(sessionId)).byteLength
+        const separatorBytes = current.length > 0 ? 1 : 0
+        if (
+            current.length > 0
+            && currentBytes + separatorBytes + itemBytes > CONTENT_SEARCH_SCOPE_CHUNK_BYTES
+        ) {
+            chunks.push(current)
+            current = []
+            currentBytes = 2
+        }
+
+        current.push(sessionId)
+        currentBytes += (current.length > 1 ? 1 : 0) + itemBytes
+    }
+
+    if (current.length > 0) chunks.push(current)
+    return chunks
+}
+
+function mergeContentSearchResponses(
+    responses: SessionContentSearchResponse[],
+    limit: number
+): SessionContentSearchResponse {
+    const results = responses
+        .flatMap(response => response.results)
+        .sort((a, b) => (
+            b.session.updatedAt - a.session.updatedAt
+            || b.match.seq - a.match.seq
+            || b.match.createdAt - a.match.createdAt
+            || a.session.id.localeCompare(b.session.id)
+        ))
+
+    return {
+        results: results.slice(0, limit),
+        hasPotentiallyIncompleteResults: responses.some(response => response.hasPotentiallyIncompleteResults)
+    }
 }
 
 type ApiClientOptions = {
@@ -233,6 +293,8 @@ export class ApiClient {
         if (authToken) {
             headers.set('authorization', `Bearer ${authToken}`)
         }
+        // The session route rebinds to a survivor's id (getMergedSessionRedirectId).
+        headers.set(FOLLOW_SESSION_REDIRECTS_HEADER, '1')
         if (init?.body !== undefined && !(init.body instanceof FormData) && !headers.has('content-type')) {
             headers.set('content-type', 'application/json')
         }
@@ -341,6 +403,65 @@ export class ApiClient {
         if (this.requestBodyLimitBytes !== null && bytes > this.requestBodyLimitBytes) {
             throw new ApiError('Request body exceeds the configured limit', 413, 'request_body_too_large')
         }
+    }
+
+    async searchSessionContent(
+        query: string,
+        limit: number = 50,
+        signal?: AbortSignal,
+        sessionIds?: readonly string[]
+    ): Promise<SessionContentSearchResponse> {
+        const normalizedQuery = query.trim()
+        if (sessionIds !== undefined) {
+            const normalizedSessionIds = [...new Set(sessionIds.map((sessionId) => sessionId.trim()).filter(Boolean))]
+            const chunks = chunkContentSearchSessionIds(normalizedSessionIds)
+            if (chunks.length <= 1) {
+                return await this.request<SessionContentSearchResponse>(
+                    '/api/sessions/content-search',
+                    {
+                        method: 'POST',
+                        signal,
+                        body: JSON.stringify({
+                            query: normalizedQuery,
+                            limit,
+                            sessionIds: normalizedSessionIds
+                        })
+                    }
+                )
+            }
+
+            const responses = await Promise.all(chunks.map((chunk) => this.request<SessionContentSearchResponse>(
+                '/api/sessions/content-search',
+                {
+                    method: 'POST',
+                    signal,
+                    body: JSON.stringify({
+                        query: normalizedQuery,
+                        limit,
+                        sessionIds: chunk
+                    })
+                }
+            )))
+            return mergeContentSearchResponses(responses, limit)
+        }
+        const params = new URLSearchParams({ query: normalizedQuery, limit: String(limit) })
+        return await this.request<SessionContentSearchResponse>(
+            `/api/sessions/content-search?${params.toString()}`,
+            { signal }
+        )
+    }
+
+    async searchSessionContentMatches(
+        sessionId: string,
+        query: string,
+        limit: number = 500,
+        signal?: AbortSignal
+    ): Promise<SessionContentMatchesResponse> {
+        const params = new URLSearchParams({ query: query.trim(), limit: String(limit) })
+        return await this.request<SessionContentMatchesResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/content-search?${params.toString()}`,
+            { signal }
+        )
     }
 
     async getPushVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
@@ -504,6 +625,12 @@ export class ApiClient {
         const qs = params.toString()
         const url = `/api/sessions/${encodeURIComponent(sessionId)}/messages${qs ? `?${qs}` : ''}`
         return await this.request<MessagesResponse>(url)
+    }
+
+    async getMessageContext(sessionId: string, messageId: string): Promise<MessageContextResponse | null> {
+        return await this.request<MessageContextResponse | null>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/context`
+        )
     }
 
     async getGitStatus(sessionId: string): Promise<GitCommandResponse> {
@@ -686,12 +813,12 @@ export class ApiClient {
         })
     }
 
-    async forkConversation(sessionId: string, messageLocalId?: string): Promise<{ sessionId: string }> {
+    async forkConversation(sessionId: string, messageLocalId?: string, latestCompleted = false): Promise<{ sessionId: string }> {
         return await this.request<{ sessionId: string }>(
             `/api/sessions/${encodeURIComponent(sessionId)}/fork`,
             {
                 method: 'POST',
-                body: JSON.stringify(messageLocalId ? { messageLocalId } : {})
+                body: JSON.stringify(latestCompleted ? { latestCompleted: true } : messageLocalId ? { messageLocalId } : {})
             }
         )
     }
@@ -889,6 +1016,16 @@ export class ApiClient {
             timeZone
         })
         return await this.request<UsageSummaryResponse>(`/api/usage/summary?${params.toString()}`)
+    }
+
+    async getUsageQuotas(refresh?: boolean): Promise<UsageQuotasResponse> {
+        return await this.request<UsageQuotasResponse>(`/api/usage/quotas${refresh ? '?refresh=1' : ''}`)
+    }
+
+    async getMachineAgentQuotas(machineId: string, refresh?: boolean): Promise<AgentQuotasResponse> {
+        return await this.request<AgentQuotasResponse>(
+            `/api/machines/${encodeURIComponent(machineId)}/agent-quotas${refresh ? '?refresh=1' : ''}`
+        )
     }
 
     async restartMachineRunner(machineId: string): Promise<{ message: string }> {
@@ -1099,6 +1236,18 @@ export class ApiClient {
             method: 'POST',
             body: JSON.stringify({ mode })
         })
+    }
+
+    async getSessionCopilotReasoningEffortOptions(sessionId: string): Promise<CopilotReasoningEffortResponse> {
+        return await this.request<CopilotReasoningEffortResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/copilot-reasoning-effort-options`
+        )
+    }
+
+    async getSessionKimiReasoningEffortOptions(sessionId: string): Promise<KimiReasoningEffortResponse> {
+        return await this.request<KimiReasoningEffortResponse>(
+            `/api/sessions/${encodeURIComponent(sessionId)}/kimi-reasoning-effort-options`
+        )
     }
 
     async getSessionGrokReasoningEffortOptions(sessionId: string): Promise<GrokReasoningEffortResponse> {

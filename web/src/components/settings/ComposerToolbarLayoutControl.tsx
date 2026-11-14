@@ -17,6 +17,7 @@ const ITEM_LABEL_KEYS: Record<ComposerToolbarItemId, string> = {
     textContext: 'settings.chat.composerToolbar.item.textContext',
     settings: 'settings.chat.composerToolbar.item.settings',
     expand: 'settings.chat.composerToolbar.item.expand',
+    fast: 'settings.chat.composerToolbar.item.fast',
     model: 'settings.chat.composerToolbar.item.model',
     effort: 'settings.chat.composerToolbar.item.effort',
     terminal: 'settings.chat.composerToolbar.item.terminal',

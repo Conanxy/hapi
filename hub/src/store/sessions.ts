@@ -7,6 +7,11 @@ import { preserveSessionTitle } from './sessionTitleLock'
 import type { StoredSession, VersionedUpdateResult } from './types'
 import { safeJsonParse } from './json'
 import { updateVersionedField } from './versionedUpdates'
+import { removeMessageContentSearchForSession } from './messageContentSearch'
+
+function runInTransaction<T>(db: Database, operation: () => T): T {
+    return db.inTransaction ? operation() : db.transaction(operation)()
+}
 
 // Carry-forward fields that the hub preserves across any metadata
 // replacement when the incoming write omits them.
@@ -81,6 +86,10 @@ const HUB_OWNED_METADATA_FIELDS = [
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasSameJsonValue(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function carryForwardIfMissing(
@@ -485,6 +494,17 @@ export function updateSessionMetadata(
                 && !allowUnarchive
             ) {
                 merged = preserveHubArchiveOnMerged(prior, merged)
+            }
+
+            const releasesPreallocatedStub = !options?.allowTitleUpdate
+                && isMachineSpawnPreallocatedStub(existing)
+                && !isHubArchivedSessionMetadata(merged)
+            if (
+                expectedVersion === existing.metadataVersion
+                && hasSameJsonValue(prior, merged)
+                && !releasesPreallocatedStub
+            ) {
+                return { result: 'success', version: existing.metadataVersion, value: prior }
             }
 
             const result = updateVersionedField({
@@ -937,14 +957,30 @@ export function getSessionsByNamespace(db: Database, namespace: string): StoredS
 }
 
 export function deleteSession(db: Database, id: string, namespace: string): boolean {
-    const result = prepareCached(db,
-        'DELETE FROM sessions WHERE id = ? AND namespace = ?'
-    ).run(id, namespace)
-    if (result.changes > 0) {
-        // Per-socket access memos stamp the epoch they were filled under;
-        // bumping makes their next event re-resolve instead of serving a
-        // grant for a row that no longer exists.
-        bumpSessionDeletionEpoch()
-    }
-    return result.changes > 0
+    // Refuse while a running attached job exists — CASCADE would erase the live
+    // meter for idle (active=false) outliving work. Callers must transfer/clear first.
+    // Also drop FTS rows before the session DELETE (#1598).
+    return runInTransaction(db, () => {
+        const existing = prepareCached(db,
+            'SELECT 1 FROM sessions WHERE id = ? AND namespace = ?'
+        ).get(id, namespace)
+        if (!existing) return false
+        const blocked = prepareCached(db, `
+            SELECT 1 FROM session_jobs
+            WHERE session_id = ? AND status = 'running'
+            LIMIT 1
+        `).get(id)
+        if (blocked) return false
+        removeMessageContentSearchForSession(db, id)
+        const result = prepareCached(db,
+            'DELETE FROM sessions WHERE id = ? AND namespace = ?'
+        ).run(id, namespace)
+        if (result.changes > 0) {
+            // Per-socket access memos stamp the epoch they were filled under;
+            // bumping makes their next event re-resolve instead of serving a
+            // grant for a row that no longer exists.
+            bumpSessionDeletionEpoch()
+        }
+        return result.changes > 0
+    })
 }

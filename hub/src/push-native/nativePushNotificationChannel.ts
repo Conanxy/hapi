@@ -1,5 +1,5 @@
 import type { Session } from '../sync/syncEngine'
-import type { NotificationChannel, TaskNotification } from '../notifications/notificationTypes'
+import type { NotificationChannel } from '../notifications/notificationTypes'
 import type { NotificationSendContext } from '../notifications/notificationSendContext'
 import { NATIVE_CONTRACT_VERSION, NativeNotificationComposer, type ComposedNativeNotification } from '../notifications/nativeNotificationComposer'
 import type { Store } from '../store'
@@ -29,14 +29,6 @@ export class NativePushNotificationChannel implements NotificationChannel {
         }
 
         await this.deliver(session, this.toPayload(this.composer.composeReady(session)), ctx)
-    }
-
-    async sendTaskNotification(session: Session, notification: TaskNotification, ctx?: NotificationSendContext): Promise<void> {
-        if (!session.active) {
-            return
-        }
-
-        await this.deliver(session, this.toPayload(this.composer.composeTask(session, notification)), ctx)
     }
 
     private toPayload(composed: ComposedNativeNotification): NativePushPayload {

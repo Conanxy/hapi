@@ -138,7 +138,12 @@ struct ChatComposerView: View {
                             isComposing: $isComposing,
                             font: .systemFont(ofSize: typography.bodySize, weight: typography.boldText ? .semibold : .regular),
                             accessibilityLabel: scratchlistMode
-                                ? String(localized: "Keep an instruction for later…") : String(localized: "Message the agent…"))
+                                ? String(localized: "Keep an instruction for later…") : String(localized: "Message the agent…"),
+                            onReturn: {
+                                handleReturn(composer, attachments: attachments,
+                                             mentions: mentionSuggestions, slashCommands: slashSuggestions)
+                            },
+                            onPasteItems: ingest)
                     }
                     .padding(.horizontal, collapsed ? 2 : 14)
                     .padding(.top, collapsed ? 0 : 12)
@@ -232,6 +237,13 @@ struct ChatComposerView: View {
             }
             .ignoresSafeArea()
         }
+        // Finder/Files drags anywhere on the composer attach like a file pick.
+        .onDrop(of: [.item], isTargeted: nil) { providers in
+            let loadable = providers.filter(ItemProviderAttachmentLoader.canLoad)
+            guard !loadable.isEmpty, !interactor.scratchlistBusy, !interactor.isSending else { return false }
+            ingest(loadable)
+            return true
+        }
         .fileImporter(
             isPresented: $filePickerOpen,
             allowedContentTypes: [.item],
@@ -291,6 +303,22 @@ struct ChatComposerView: View {
             ? ScratchlistAttachmentImport.compressionSettings(imageCompressionPrefs.settings, limits: limits)
             : imageCompressionPrefs.settings
         await handle(await prepare(settings), toScratchlist: toScratchlist, limits: limits)
+    }
+
+    private func ingest(_ providers: [NSItemProvider]) {
+        Task {
+            for provider in providers {
+                guard let copy = await ItemProviderAttachmentLoader.copy(provider) else {
+                    interactor.postNotice(String(format: String(localized: "Couldn't read %@"),
+                                                 provider.suggestedName ?? String(localized: "the dropped item")))
+                    continue
+                }
+                await prepareAttachment { settings in
+                    await AttachmentPreparer.prepare(fileURL: copy.fileURL, settings: settings)
+                }
+                copy.remove()
+            }
+        }
     }
 
     private func handle(
@@ -500,6 +528,27 @@ struct ChatComposerView: View {
         }
         if scratchlistMode { parkButton }
         else { primaryActionButton(composer, attachments: attachments) }
+    }
+
+    /// Mac Return: picks the first visible suggestion, otherwise sends when
+    /// the Send button would. Scratchlist drafts keep Return as a newline.
+    private func handleReturn(_ composer: ComposerState, attachments: [ComposerAttachmentUI],
+                              mentions: [ComposerMentionSuggestion], slashCommands: [SlashCommand]) -> Bool {
+        if let suggestion = mentions.first {
+            if let selection = interactor.selectMention(suggestion, selection: textSelection) {
+                textSelection = selection
+            }
+            return true
+        }
+        if let command = slashCommands.first {
+            interactor.selectSlashCommand(command)
+            return true
+        }
+        guard !scratchlistMode else { return false }
+        if primaryAction(composer, attachments: attachments).canSend {
+            interactor.sendMessage()
+        }
+        return true
     }
 
     private func primaryAction(_ composer: ComposerState, attachments: [ComposerAttachmentUI]) -> ComposerPrimaryAction {

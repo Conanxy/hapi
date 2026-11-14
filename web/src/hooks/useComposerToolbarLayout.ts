@@ -5,6 +5,7 @@ export const COMPOSER_TOOLBAR_ITEM_IDS = [
     'textContext',
     'settings',
     'expand',
+    'fast',
     'model',
     'effort',
     'terminal',
@@ -103,7 +104,14 @@ export function normalizeComposerToolbarLayout(value: unknown): ComposerToolbarL
     const hidden = normalizeGroup(candidate.hidden)
     for (const item of COMPOSER_TOOLBAR_ITEM_IDS) {
         if (!seen.has(item)) {
-            left.push(item)
+            if (item === 'fast') {
+                const group = right.includes('model') ? right : left
+                const modelIndex = group.indexOf('model')
+                const settingsIndex = group.indexOf('settings')
+                group.splice(modelIndex >= 0 ? modelIndex : settingsIndex >= 0 ? settingsIndex + 1 : group.length, 0, item)
+            } else {
+                left.push(item)
+            }
         }
     }
 

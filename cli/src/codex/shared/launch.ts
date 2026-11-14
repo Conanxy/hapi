@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveCodexCommand, type CodexCommand } from '../utils/codexExecutable';
 import { parseCodexCliOverrides, stripCodexCliOverrides } from '../utils/codexCliOverrides';
 import { resolveCodexPermissionModeConfig, toSharedCodexPermissionMode } from '../utils/permissionModeConfig';
+import { resolveModelCatalogArgs } from '../utils/modelCatalog';
 import { getCodexSystemPrompt } from '../utils/systemPrompt';
 import type { CodexAppServerClient } from '../codexAppServerClient';
 
@@ -138,6 +139,7 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
     // Launch-wide flags also apply to later native /new roots, not just the
     // initial HAPI-created root. Explicit config layers keep their order.
     for (const [key, value] of Object.entries(config)) serverArgs.push('-c', `${key}=${JSON.stringify(value)}`);
+    serverArgs.push(...resolveModelCatalogArgs(serverArgs));
     return {
         cwd: directory, serverArgs, tuiArgs,
         threadParams: {
@@ -148,8 +150,8 @@ export function sharedLaunchConfig(options: SharedLaunchOptions, cwd: string): {
             ...(overrides.sandbox ? { sandbox: overrides.sandbox } : {}),
             ...(autoReview ? { approvalPolicy: 'on-request', approvalsReviewer: 'auto_review', sandbox: 'workspace-write' } : {}),
             ...(permission ? { approvalPolicy: permission.approvalPolicy, approvalsReviewer: reviewer, sandbox: permission.sandbox } : {}),
-            config: { ...config, ...(options.modelReasoningEffort ? { model_reasoning_effort: options.modelReasoningEffort } : {}) },
-            developerInstructions: getCodexSystemPrompt()
+            config: { ...config, ...(options.modelReasoningEffort ? { model_reasoning_effort: options.modelReasoningEffort } : {}) }
+            // developerInstructions are resolved by root.config() after session bootstrap loads the Hub summary preference.
         }
     };
 }
