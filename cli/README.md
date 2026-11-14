@@ -43,7 +43,7 @@ Choose a supported coding agent from your terminal and control its sessions remo
   DSH is remote-only and its ACP server must be configured separately.
 - `hapi resume [sessionId]` - List resumable sessions for this machine or resume one locally.
 - `hapi ping-peer <session-id-prefix> <message>` - Message another session. Inactive targets are refused (exit 5) unless `--wake` resumes them first. Prefer this or MCP `ping_peer` / `list_peers` over reinventing JWT+curl. Also `--message-file` / `--list [--all]` (active sessions with machine and cwd; `--all` includes inactive).
-- `hapi spawn-peer --dir PATH --name TITLE --message-file -` - Spawn a session and deliver a required first message. Optional `--machine ID|hostname` targets another runner (resolved via GET /api/machines); `--dir` must exist on the target. Machine spawn HTTP 200 is not a working peer; this command fails if the remit does not land. Prefer MCP `spawn_peer`.
+- `hapi spawn-peer --dir PATH --name TITLE --message-file -` - Spawn a session and deliver a required first message. Optional `--machine ID|hostname` targets another runner (resolved via GET /api/machines); `--dir` must exist on the target, and `--session-type worktree` requires it to be a git repository. Machine spawn HTTP 200 is not a working peer; this command fails if the remit does not land. Prefer MCP `spawn_peer`.
 - `hapi usage [--since 24h|7d|<ISO>|<ms>] [--until …] [--json]` - When agents were working across every machine on the hub, from `GET /api/activity`. `--json` prints one `hapi.activity.v1` report for other tools (time trackers); errors go to stderr with exit codes 2 (arguments), 3 (no token or refused), 4 (hub too old), 1 (other).
 - `hapi inspect-peer <session-id-or-prefix>` - Read-only peer metadata + recent message text (no resume). Prefer this or MCP `inspect_peer` when a user cites `[title](/sessions/<id>)` or Copy-reference `See session "…" (/sessions/<id>) for context`. `/sessions/<id>` is a hub path, not a local file. Optional `--limit`.
 - `hapi set-mode <session-id-or-prefix> <mode>` - Change the permission mode of an existing session, like the web permission picker. Active sessions switch immediately; inactive ones use it on next resume. An invalid mode prints the modes allowed for that agent.
@@ -460,6 +460,12 @@ versions, builds and prepares binaries, publishes the platform packages,
 waits for them to become available, then publishes the wrapper and commits,
 tags, and pushes. Actual publishing requires `main`; local npm publishing also
 checks the `youngfine` identity and package write access.
+From the repository root, `bun run release-all <version>` updates the CLI package,
+shared app version, iOS `MARKETING_VERSION` (app and notification extension, all
+configurations), and Android's default `versionName`, then commits, tags `v<version>`,
+and pushes. It requires a clean working tree on `main`. Use `--dry-run` to preview
+without changing files. iOS `CURRENT_PROJECT_VERSION` remains managed separately; Android's
+`versionCode` is the git commit count, and its `-PhapiVersionName` override is preserved.
 
 `--publish-npm` skips git operations and requires the version to already match
 `cli/package.json`; `--skip-build` reuses existing binaries. `--dry-run` can run

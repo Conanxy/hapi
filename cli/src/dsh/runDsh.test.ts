@@ -71,6 +71,8 @@ vi.mock('./dshRemoteLauncher', () => ({
         }
 
         async kill(): Promise<void> {}
+
+        async shutdown(): Promise<void> {}
     }
 }))
 

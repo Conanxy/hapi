@@ -14,6 +14,7 @@ export type NativePushData = {
     contractVersion: string
     severity?: 'info' | 'success' | 'warning' | 'error'
     notifySummary?: string
+    tag?: string
 }
 
 export type NativePushPayload = {

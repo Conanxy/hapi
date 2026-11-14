@@ -488,4 +488,96 @@ describe('NativePushNotificationChannel', () => {
         }))
         expect(sent[0].data.severity).toBe('warning')
     })
+
+
+
+
+    it('sendModelError fires native push with severity=error', async () => {
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel({
+            sendToNamespace: async (_namespace: string, payload: NativePushPayload) => {
+                sent.push(payload)
+                return { sent: 1, failed: 0, invalidTokens: [] }
+            }
+        } as never)
+
+        await channel.sendModelError(createSession(), {
+            eventId: 'evt-1710000000000',
+            kind: 'quota_exhausted',
+            transient: false,
+            rawSnippet: 'You have hit your usage limit',
+            priorAssistantClaimsDone: true,
+            atTs: 1710000000000
+        })
+
+        expect(sent).toHaveLength(1)
+        expect(sent[0].data.type).toBe('model-error')
+        expect(sent[0].data.severity).toBe('error')
+        expect(sent[0].tag).toBe('model-error-session-ready-evt-1710000000000')
+        expect(sent[0].data.tag).toBe('model-error-session-ready-evt-1710000000000')
+        expect(sent[0].title).toBe('Quota exhausted')
+        expect(sent[0].body).toContain('Codex')
+        expect(sent[0].body).toContain('Demo')
+    })
+
+    it('sendModelError uses distinct tags per eventId so errors do not collapse', async () => {
+        const sent: NativePushPayload[] = []
+        const channel = new NativePushNotificationChannel({
+            sendToNamespace: async (_n: string, p: NativePushPayload) => {
+                sent.push(p)
+                return { sent: 1, failed: 0, invalidTokens: [] }
+            }
+        } as never)
+
+        const base = {
+            kind: 'rate_limited',
+            transient: true,
+            rawSnippet: 'slow down',
+            priorAssistantClaimsDone: false
+        }
+
+        await channel.sendModelError(createSession(), { ...base, eventId: 'evt-1', atTs: 1 })
+        await channel.sendModelError(createSession(), { ...base, eventId: 'evt-2', atTs: 2 })
+
+        expect(sent[0].tag).toBe('model-error-session-ready-evt-1')
+        expect(sent[1].tag).toBe('model-error-session-ready-evt-2')
+        expect(sent[0].data.type).toBe('model-error')
+        expect(sent[1].data.severity).toBe('error')
+    })
+
+    it('sendModelError sets nativeGate.sent when FCM delivers', async () => {
+        const gate = { sent: false }
+        const channel = new NativePushNotificationChannel({
+            sendToNamespace: async () => ({ sent: 1, failed: 0, invalidTokens: [] })
+        } as never)
+
+        await channel.sendModelError(createSession(), {
+            eventId: 'evt-9',
+            kind: 'quota_exhausted',
+            transient: false,
+            rawSnippet: 'limit',
+            priorAssistantClaimsDone: false,
+            atTs: 9
+        }, { nativeGate: gate })
+
+        expect(gate.sent).toBe(true)
+    })
+
+    it('sendModelError leaves nativeGate.sent false when FCM sends zero', async () => {
+        const gate = { sent: false }
+        const channel = new NativePushNotificationChannel({
+            sendToNamespace: async () => ({ sent: 0, failed: 1, invalidTokens: [] })
+        } as never)
+
+        await channel.sendModelError(createSession(), {
+            eventId: 'evt-9',
+            kind: 'quota_exhausted',
+            transient: false,
+            rawSnippet: 'limit',
+            priorAssistantClaimsDone: false,
+            atTs: 9
+        }, { nativeGate: gate })
+
+        expect(gate.sent).toBe(false)
+    })
 })

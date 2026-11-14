@@ -139,6 +139,11 @@ export class FcmService implements NativePushSender {
         if (payload.data.notifySummary) {
             dataRecord.notifySummary = payload.data.notifySummary
         }
+        if (payload.tag) {
+            dataRecord.tag = payload.tag
+        } else if (payload.data.tag) {
+            dataRecord.tag = payload.data.tag
+        }
 
         // Data-only: if we also send `notification`, Android does not call
         // onMessageReceived while backgrounded — Wear relay never runs.
