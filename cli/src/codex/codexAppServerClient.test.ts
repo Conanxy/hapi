@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { execFileSyncMock, spawnMock } = vi.hoisted(() => ({
     execFileSyncMock: vi.fn(() => 'codex-cli 1.0.0'),
@@ -61,10 +61,13 @@ function deferred<T>() {
 
 describe('CodexAppServerClient process cwd', () => {
     beforeEach(() => {
+        vi.stubEnv('HAPI_CODEX_APP_SERVER_BIN', undefined);
         execFileSyncMock.mockClear();
         spawnMock.mockReset();
         vi.mocked(killProcessByChildProcess).mockClear();
     });
+
+    afterEach(() => { vi.unstubAllEnvs(); });
 
     it('lets a completed read/fork helper exit on stdin EOF without process-tree probing', async () => {
         const child = fakeChild();

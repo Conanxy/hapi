@@ -18,6 +18,8 @@ import {
     ListOpencodeSessionsRpcResponseSchema,
     ListPiSessionsRpcResponseSchema
 } from '@hapi/protocol/apiTypes'
+import { ListLocalSessionsRpcResponseSchema } from '@hapi/protocol/localTranscript'
+import type { ListLocalSessionsRpcResponse, LocalSessionFlavor } from '@hapi/protocol/localTranscript'
 import type {
     AbortChunkedUploadResponse,
     AgyModelsResponse,
@@ -662,6 +664,20 @@ export class RpcGateway {
         return ArchiveCodexSessionRpcResponseSchema.parse(result)
     }
 
+    async listLocalSessionsForMachine(machineId: string, params: {
+        flavor: LocalSessionFlavor
+        cwd?: string | null
+        sessionIds?: string[] | null
+    }): Promise<ListLocalSessionsRpcResponse> {
+        const result = await this.machineRpc(
+            machineId,
+            RPC_METHODS.ListLocalSessions,
+            { flavor: params.flavor, cwd: params.cwd ?? null, sessionIds: params.sessionIds ?? undefined },
+            MODEL_LIST_RPC_TIMEOUT_MS
+        )
+        return ListLocalSessionsRpcResponseSchema.parse(result)
+    }
+
     async listCursorModelsForSession(sessionId: string): Promise<RpcListCursorModelsResponse> {
         return await this.sessionRpc(sessionId, RPC_METHODS.ListCursorModels, {}, MODEL_LIST_RPC_TIMEOUT_MS) as RpcListCursorModelsResponse
     }
@@ -768,7 +784,7 @@ export class RpcGateway {
 
     async forkConversation(
         sessionId: string,
-        params: { messageLocalId?: string; latestCompleted?: boolean }
+        params: { messageLocalId?: string; latestCompleted?: boolean; lastTurnId?: string }
     ): Promise<import('@hapi/protocol/apiTypes').ForkConversationRpcResponse> {
         return await this.sessionRpc(
             sessionId,
@@ -776,6 +792,25 @@ export class RpcGateway {
             params,
             120_000
         ) as import('@hapi/protocol/apiTypes').ForkConversationRpcResponse
+    }
+
+    /** Ask a preview-capable shared runtime where its fork boundary sits. */
+    async previewForkBoundary(
+        sessionId: string,
+        params: import('@hapi/protocol/apiTypes').PreviewForkBoundaryRequest
+    ): Promise<import('@hapi/protocol/apiTypes').PreviewForkBoundaryResult> {
+        // A CLI handler failure arrives as a RESOLVED {error} envelope
+        // (RpcHandlerManager serializes thrown errors), not a rejected RPC:
+        // unwrapped, the cast would answer the preview with a cut of
+        // undefineds instead of the runtime failure.
+        const result = await this.sessionRpc(
+            sessionId,
+            RPC_METHODS.PreviewForkBoundary,
+            params,
+            30_000
+        ) as import('@hapi/protocol/apiTypes').PreviewForkBoundaryResult & { error?: unknown }
+        if (typeof result?.error === 'string' && result.error) throw new Error(result.error)
+        return result
     }
 
     async forkArchivedCodex(machineId: string, request: import('@hapi/protocol/apiTypes').ForkArchivedCodexRequest): Promise<import('@hapi/protocol/apiTypes').ForkArchivedCodexResponse> {

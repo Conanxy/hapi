@@ -7,6 +7,7 @@ import {
     mkdtempSync,
     readFileSync,
     readdirSync,
+    realpathSync,
     rmSync,
     statSync,
     symlinkSync,
@@ -70,7 +71,7 @@ describe('installCursorNotifyRuleOverlay', () => {
     let previousHapiHome: string | undefined;
 
     beforeEach(() => {
-        cwd = mkdtempSync(join(tmpdir(), 'hapi-notify-rule-'));
+        cwd = realpathSync(mkdtempSync(join(tmpdir(), 'hapi-notify-rule-')));
         hapiHome = mkdtempSync(join(tmpdir(), 'hapi-home-'));
         previousHapiHome = process.env.HAPI_HOME;
         process.env.HAPI_HOME = hapiHome;

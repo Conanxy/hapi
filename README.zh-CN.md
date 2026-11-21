@@ -8,9 +8,15 @@
 
 ## 版本与上游基线
 
-- 源码版本为 `0.34.0-youngfine.2`，合入上游标签 `v0.34.0`（`1f4518df`）并保留个人二开改动。
+- 源码版本为 `0.36.5-youngfine.1`，合入上游标签 `v0.36.5`（`590a9533`）并保留个人二开改动。
 - 可通过 `npm view @youngfine/hapi version --registry=https://registry.npmjs.org` 查询 npm 最新发布版本；源码版本可能领先于 npm。
 - npm 主包及五个平台包覆盖 macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，npm 包不包含 APK 或 iOS 应用构建。
+
+## 0.36.5-youngfine.1 更新内容
+
+- 上游新增通行密钥登录、本机会话导入和接入运行中的 Codex Desktop 会话，并调整 Codex 停止和消息排队行为。
+- Hub 事件流和 CLI 响应支持压缩，会话列表能反映仍在执行的工具调用。
+- 个人版保留发送失败恢复、工作状态红点和原有推送集成。
 
 ## 0.34.0-youngfine.2 更新内容
 
@@ -123,7 +129,7 @@ Hub 可在实际使用的 `HAPI_HOME/settings.json`（默认 `~/.hapi/settings.j
 该版本在 npm 可用后，可使用以下命令安装：
 
 ```bash
-npm install -g @youngfine/hapi@0.34.0-youngfine.2 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.36.5-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```

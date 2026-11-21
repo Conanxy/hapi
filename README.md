@@ -8,9 +8,15 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Source version: `0.34.0-youngfine.2`, integrating upstream tag `v0.34.0` (`1f4518df`) and preserving the fork's custom changes.
+- Source version: `0.36.5-youngfine.1`, integrating upstream tag `v0.36.5` (`590a9533`) and preserving the fork's custom changes.
 - Check the latest published npm version with `npm view @youngfine/hapi version --registry=https://registry.npmjs.org`; the source can be ahead of npm.
 - The npm wrapper and five platform packages cover macOS ARM64/x64, Linux ARM64/x64, and Windows x64, and include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; npm does not include an APK or an iOS app build.
+
+## What's New in 0.36.5-youngfine.1
+
+- Upstream adds passkey sign-in, local session imports, Codex Desktop attachment, and updates to Codex stop and queue handling.
+- Hub event streams and CLI responses gain compression, and session activity reflects ongoing tool work.
+- The fork keeps failed-message recovery, red working indicators, and its existing push notification integrations.
 
 ## What's New in 0.34.0-youngfine.2
 
@@ -135,7 +141,7 @@ Using this vivo integration requires Hub `.4` and the corresponding Android APK.
 Once this version is available on npm, install it with:
 
 ```bash
-npm install -g @youngfine/hapi@0.34.0-youngfine.2 --registry=https://registry.npmjs.org
+npm install -g @youngfine/hapi@0.36.5-youngfine.1 --registry=https://registry.npmjs.org
 hapi hub --relay
 hapi runner start --workspace-root ~/git-repository
 ```

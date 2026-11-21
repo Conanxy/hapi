@@ -1,4 +1,4 @@
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import * as Popover from '@radix-ui/react-popover'
 import { SessionListScrollAnchor } from './SessionListScrollAnchor'
 import type { SessionContentSearchResponse, SessionSummary } from '@/types/api'
@@ -11,17 +11,19 @@ import {
     sortSessionsBySearchRelevance,
 } from '@/lib/sessionListSearch'
 import { useLongPress } from '@/hooks/useLongPress'
+import { useLowRateAnimation } from '@/hooks/useLowRateAnimation'
 import { usePlatform } from '@/hooks/usePlatform'
-import { sessionArchiveMutationKey, useSessionActions } from '@/hooks/mutations/useSessionActions'
+import { sessionArchiveMutationKey, sessionPinMutationKey, useSessionActions } from '@/hooks/mutations/useSessionActions'
 import { useIsMutating } from '@tanstack/react-query'
 import { SessionActionMenu } from '@/components/SessionActionMenu'
 import { SessionExportDialog } from '@/components/SessionExportDialog'
 import { RenameSessionDialog } from '@/components/RenameSessionDialog'
+import { LinkPrDialog } from '@/components/LinkPrDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ArchiveSessionDialog } from '@/components/ArchiveSessionDialog'
 import { DeleteSessionDialog } from '@/components/DeleteSessionDialog'
 import { ProjectGroupRow } from '@/components/ProjectGroupRow'
-import { ArchiveIcon, CheckIcon, CopyIcon, InfoIcon, LoaderIcon, MarkAllReadIcon } from '@/components/icons'
+import { ArchiveIcon, CheckIcon, CopyIcon, InfoIcon, LoaderIcon, MarkAllReadIcon, PinOffIcon } from '@/components/icons'
 import { useFue } from '@/lib/use-fue'
 import { FueCallout, FueDot } from '@/components/Fue'
 
@@ -53,6 +55,16 @@ function MoreHorizontalIcon(props: { className?: string }) {
             <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
         </svg>
     )
+}
+
+/**
+ * Small status dot whose pulse (when enabled) comes from the shared low-rate
+ * ticker rather than a running CSS animation. `className` carries size/color.
+ */
+function LowRatePulseDot({ pulse, className }: { pulse: boolean; className: string }) {
+    const ref = useRef<HTMLSpanElement | null>(null)
+    useLowRateAnimation(ref, 'pulse', pulse)
+    return <span ref={ref} className={className} aria-hidden="true" />
 }
 
 /** Narrow-header overflow for shed secondary actions (tiann/hapi#2039). */
@@ -123,9 +135,19 @@ import type { Machine } from '@/types/api'
 import { getMachinePlatform, presentMachineHealth } from '@/lib/machineHealth'
 import { MachineFilterBar, MachineFilterMenu, MachineSummaryRow } from '@/components/MachineFilterBar'
 import { useSessionListMachineFilter } from '@/hooks/useSessionListMachineFilter'
+import { useForkFlow } from '@/hooks/useForkFlow'
+import { ForkPreviewDialog } from '@/components/AssistantChat/ForkPreviewDialog'
 import { useTransientScrollbar } from '@/hooks/useTransientScrollbar'
 import { useCursorChatStoreStatus } from '@/hooks/queries/useCursorChatStoreStatus'
+import { useFeatures, type FeaturesResponse } from '@/hooks/queries/useFeatures'
+import { useMinuteTick } from '@/hooks/useMinuteTick'
 import { SessionRowSummary } from '@/components/SessionRowSummary'
+import {
+    DEFAULT_PR_CHIP_DISPLAY,
+    getPrimaryGithubPrRef,
+    resolveGithubPrChipDisplay
+} from '@hapi/protocol'
+import { formatGithubPrChipDetailParts, SessionPrChip } from '@/components/SessionPrChip'
 import { Spinner } from '@/components/Spinner'
 import { transferComposerDraftThenNavigate } from '@/lib/composer-draft-transfer'
 import { useToast } from '@/lib/toast-context'
@@ -323,12 +345,19 @@ type MachineGroup = {
 export const UNKNOWN_MACHINE_ID = '__unknown__'
 export const GROUP_SESSION_PREVIEW_LIMIT = DEFAULT_SESSION_PREVIEW_LIMIT
 
+const MACHINE_LOCAL_AGENT_FLAVORS = new Set(['codex', 'claude', 'pi', 'opencode'])
+
 export function getSessionDedupKey(session: SessionSummary): string | null {
     const agentId = session.metadata?.agentSessionId?.trim()
     if (!agentId) return null
     // Scope by flavor: agentSessionId is flattened from native ids and can retain a
     // stale cross-flavor value (codexSessionId ?? claudeSessionId ?? ...).
-    return `${session.metadata?.flavor ?? 'unknown'}:${agentId}`
+    const flavor = session.metadata?.flavor ?? 'unknown'
+    // These native ids live in one machine's local store, and the hub keeps
+    // sessions recorded on different machines apart: hiding one behind the
+    // other would make an imported session look deleted.
+    const machineId = MACHINE_LOCAL_AGENT_FLAVORS.has(flavor) ? session.metadata?.machineId : undefined
+    return machineId ? `${flavor}:${machineId}:${agentId}` : `${flavor}:${agentId}`
 }
 
 export function deduplicateSessionsByAgentId(sessions: SessionSummary[], selectedSessionId?: string | null): SessionSummary[] {
@@ -1111,6 +1140,11 @@ export function SessionListSearch(props: {
 
 // A row with an open menu or dialog holds its collapsed panel mounted.
 const CollapsiblePanelHoldContext = createContext<((held: boolean) => void) | null>(null)
+const CollapsiblePanelOpenContext = createContext(true)
+
+type QuickUnpinFocusTarget = { sessionId: string; pending: boolean }
+const QuickUnpinFocusContext = createContext<{ current: QuickUnpinFocusTarget | null } | null>(null)
+const QUICK_ACTION_BUTTON_CLASS_NAME = 'flex h-7 w-7 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-wait'
 
 // Collapsed rows unmount after the close transition; mounted-but-hidden rows
 // would otherwise re-render on every session or machine update.
@@ -1132,9 +1166,11 @@ function CollapsiblePanel(props: { open: boolean; children: ReactNode }) {
             }}
         >
             <div className="collapsible-inner">
-                <CollapsiblePanelHoldContext.Provider value={hold}>
-                    {!settled || holds > 0 ? props.children : null}
-                </CollapsiblePanelHoldContext.Provider>
+                <CollapsiblePanelOpenContext.Provider value={props.open}>
+                    <CollapsiblePanelHoldContext.Provider value={hold}>
+                        {!settled || holds > 0 ? props.children : null}
+                    </CollapsiblePanelHoldContext.Provider>
+                </CollapsiblePanelOpenContext.Provider>
             </div>
         </div>
     )
@@ -1145,6 +1181,8 @@ const SessionItem = memo(function SessionItem(props: {
     onSelect: (sessionId: string, targetMessageId?: string, targetMessageQuery?: string, pendingRequestId?: string) => void
     showPath?: boolean
     api: ApiClient | null
+    features: FeaturesResponse | null
+    prNowMs: number
     titleSuggestionAvailable?: boolean
     selected?: boolean
     showDetailedStatus?: boolean
@@ -1164,6 +1202,8 @@ const SessionItem = memo(function SessionItem(props: {
         onSelect,
         showPath = true,
         api,
+        features,
+        prNowMs,
         titleSuggestionAvailable = false,
         selected = false,
         showDetailedStatus = false,
@@ -1180,12 +1220,23 @@ const SessionItem = memo(function SessionItem(props: {
     const [menuOpen, setMenuOpen] = useState(false)
     const [menuAnchorPoint, setMenuAnchorPoint] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
     const [renameOpen, setRenameOpen] = useState(false)
+    const [linkPrOpen, setLinkPrOpen] = useState(false)
     const [exportOpen, setExportOpen] = useState(false)
     const [archiveOpen, setArchiveOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
-    const [forkOpen, setForkOpen] = useState(false)
-    const [forkPending, setForkPending] = useState(false)
+    const githubPrAwarenessEnabled = Boolean(features?.githubPrAwareness.enabled)
+    const prChipDisplay = features?.prChipDisplay
+    const forkFlow = useForkFlow({
+        session: s,
+        api: api!,
+        onForked: (childSessionId) => onSelect(childSessionId)
+    })
+    const forkFlowOpen = forkFlow.flowOpen
     const pendingRequestPressedRef = useRef(false)
+    const rowRef = useRef<HTMLDivElement>(null)
+    const rowButtonRef = useRef<HTMLButtonElement>(null)
+    const quickUnpinFocusRef = useContext(QuickUnpinFocusContext)
+    const panelOpen = useContext(CollapsiblePanelOpenContext)
     const {
         status: cursorChatStoreStatus,
         isApplicable: cursorChatStoreApplicable,
@@ -1211,14 +1262,14 @@ const SessionItem = memo(function SessionItem(props: {
         ? t('session.action.reopenCursorUnverified')
         : undefined
 
-    const { archiveSession, reopenSession, renameSession, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
+    const { archiveSession, reopenSession, renameSession, upsertExternalRef, removePrimaryExternalRef, suggestSessionTitle, updateSessionSummary, deleteSession, setPinMode, isPending } = useSessionActions(
         api,
         s.id,
         s.metadata?.flavor ?? null
     )
     const [reopenError, setReopenError] = useState<string | null>(null)
     const holdPanel = useContext(CollapsiblePanelHoldContext)
-    const overlayOpen = menuOpen || renameOpen || exportOpen || archiveOpen || deleteOpen || forkOpen || reopenError !== null
+    const overlayOpen = menuOpen || renameOpen || linkPrOpen || exportOpen || archiveOpen || deleteOpen || forkFlowOpen || reopenError !== null
     useEffect(() => {
         if (!overlayOpen || !holdPanel) return
         holdPanel(true)
@@ -1257,6 +1308,61 @@ const SessionItem = memo(function SessionItem(props: {
         }
     }
 
+    const quickUnpinPending = useIsMutating({
+        mutationKey: sessionPinMutationKey(s.id),
+        exact: true,
+        predicate: (mutation) => mutation.state.variables === 'none',
+    }) > 0
+    const isPinned = Boolean(s.pinned || s.globalPinned)
+    // The row can lose its pinned flags before the unpin request settles;
+    // keep the spinner until it does.
+    const showQuickUnpin = isPinned || quickUnpinPending
+    const handleQuickUnpin = async (event: MouseEvent<HTMLButtonElement>) => {
+        const hadFocus = rowRef.current?.contains(document.activeElement) ?? false
+        if (event.detail === 0 && hadFocus && quickUnpinFocusRef) {
+            quickUnpinFocusRef.current = { sessionId: s.id, pending: true }
+            // Keep focus on the row button before disabling or removing the
+            // unpin button drops focus to document.body.
+            rowButtonRef.current?.focus({ preventScroll: true })
+        }
+        try {
+            await setPinMode('none')
+        } catch (error) {
+            if (quickUnpinFocusRef?.current?.sessionId === s.id) {
+                quickUnpinFocusRef.current = null
+            }
+            addToast({
+                title: t('session.action.pinFailed'),
+                body: error instanceof Error ? error.message : t('dialog.error.default'),
+                sessionId: s.id,
+                url: `/sessions/${s.id}`
+            })
+        } finally {
+            if (quickUnpinFocusRef?.current?.sessionId === s.id) {
+                quickUnpinFocusRef.current.pending = false
+            }
+        }
+    }
+
+    useLayoutEffect(() => {
+        const target = quickUnpinFocusRef?.current
+        if (!target || target.sessionId !== s.id) return
+        const activeEl = document.activeElement
+        const activeRowId = activeEl instanceof Element
+            ? activeEl.closest('[data-session-row-id]')?.getAttribute('data-session-row-id')
+            : null
+        if (activeEl && activeEl !== document.body && activeRowId !== s.id) {
+            quickUnpinFocusRef.current = null
+            return
+        }
+        if (!panelOpen || rowRef.current?.closest('.collapsible-panel:not([data-open])')) {
+            return
+        }
+        if (activeEl !== rowButtonRef.current) {
+            rowButtonRef.current?.focus({ preventScroll: true })
+        }
+    }, [s.id, isPinned, quickUnpinPending, quickUnpinFocusRef, panelOpen])
+
     // Hover archive: an idle session archives in one click with a Reopen toast;
     // one that is replying, waiting on approval or running background work
     // still goes through the confirmation, since archiving stops its agent.
@@ -1268,6 +1374,8 @@ const SessionItem = memo(function SessionItem(props: {
     // The row can turn inactive before the archive request settles (the hub
     // still confirms cleanup); keep the spinner until it does.
     const showQuickArchive = s.active || quickArchivePending
+    const quickActionCount = (showQuickUnpin ? 1 : 0) + (showQuickArchive ? 1 : 0)
+    const hasQuickAction = quickActionCount > 0
     const handleQuickArchive = async () => {
         if (archiveNeedsConfirmation) {
             setArchiveOpen(true)
@@ -1338,6 +1446,18 @@ const SessionItem = memo(function SessionItem(props: {
         onSelect(s.id, undefined, undefined, pendingRequestId)
     }
     const sessionName = getSessionTitle(s)
+    const primaryPrRef = getPrimaryGithubPrRef(s.metadata?.externalRefs)
+    const linkedPr = useMemo(() => {
+        if (!githubPrAwarenessEnabled || !primaryPrRef) return null
+        const profile = prChipDisplay ?? DEFAULT_PR_CHIP_DISPLAY
+        const display = resolveGithubPrChipDisplay(primaryPrRef, profile, prNowMs)
+        const parts = formatGithubPrChipDetailParts(primaryPrRef, display, t)
+        return {
+            glyph: parts.glyph,
+            detail: parts.detail,
+            href: primaryPrRef.url
+        }
+    }, [githubPrAwarenessEnabled, primaryPrRef, prChipDisplay, prNowMs, t])
     const attention = useMemo(
         () => showDetailedStatus
             ? classifySessionAttention(s, {
@@ -1356,10 +1476,14 @@ const SessionItem = memo(function SessionItem(props: {
     return (
         <>
             <div
-                className="session-list-row relative"
-                data-quick-action-pending={quickArchivePending ? '' : undefined}
+                ref={rowRef}
+                className="session-list-row relative flex w-full items-start"
+                data-session-row-id={s.id}
+                data-quick-action-count={quickActionCount > 0 ? quickActionCount : undefined}
+                data-quick-action-pending={quickArchivePending || quickUnpinPending ? '' : undefined}
             >
                 <button
+                    ref={rowButtonRef}
                     type="button"
                     {...longPressHandlers}
                     onKeyDown={handleRowKeyDown}
@@ -1368,7 +1492,7 @@ const SessionItem = memo(function SessionItem(props: {
                             && event.target.closest('[data-session-pending-request-id]') !== null
                     }}
                     data-session-scroll-anchor
-                    className={`session-list-item group/session-row flex w-full flex-col gap-1 py-2 pl-2.5 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none rounded-lg ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
+                    className={`session-list-item group/session-row flex min-w-0 flex-1 flex-col gap-1 py-2 pl-2.5 pr-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] select-none rounded-lg ${selected ? 'bg-[var(--app-secondary-bg)]' : ''}`}
                     style={{ WebkitTouchCallout: 'none' }}
                     aria-current={selected ? 'page' : undefined}
                     aria-describedby={describedBy}
@@ -1382,27 +1506,65 @@ const SessionItem = memo(function SessionItem(props: {
                         attentionTooltipId={attentionId}
                         lastSeenVersion={lastSeenVersion}
                         scheduleTooltipId={scheduleId}
+                        githubPrAwarenessEnabled={githubPrAwarenessEnabled}
+                        showPrChip={!(githubPrAwarenessEnabled && primaryPrRef)}
+                        prChipDisplay={prChipDisplay}
+                        prNowMs={prNowMs}
                         inRunningSection={inRunningSection}
                         projectLabel={projectLabel}
                         machineLabel={machineLabel}
                         contentSnippet={contentSnippet}
                         contentSearchTruncated={contentSearchTruncated}
-                        trailingClassName={showQuickArchive ? 'session-row-trailing' : undefined}
+                        trailingClassName={hasQuickAction ? 'session-row-trailing' : undefined}
                     />
                 </button>
-                {showQuickArchive ? (
-                    <button
-                        type="button"
-                        className="session-row-quick-action absolute right-1 top-1.5 h-7 w-7 items-center justify-center rounded-md text-[var(--app-hint)] transition-colors hover:bg-[var(--app-bg)] hover:text-[var(--app-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-link)] disabled:cursor-wait"
-                        aria-label={t('session.action.archive')}
-                        title={t('session.action.archive')}
-                        disabled={quickArchivePending}
-                        onClick={() => void handleQuickArchive()}
+                {githubPrAwarenessEnabled && primaryPrRef ? (
+                    <div
+                        data-testid="session-pr-chip-wrap"
+                        className="flex shrink-0 items-center self-start py-2 pr-2"
+                        style={hasQuickAction
+                            ? { paddingRight: 'calc(var(--session-row-action-span, 2rem) + 0.5rem)' }
+                            : undefined}
                     >
-                        {quickArchivePending
-                            ? <LoaderIcon className="h-4 w-4 animate-spin" />
-                            : <ArchiveIcon className="h-4 w-4" />}
-                    </button>
+                        <SessionPrChip
+                            refs={s.metadata?.externalRefs}
+                            displayProfile={prChipDisplay}
+                            nowMs={prNowMs}
+                            interactive
+                        />
+                    </div>
+                ) : null}
+                {hasQuickAction ? (
+                    <div className="session-row-quick-action absolute right-1 top-1.5 items-center gap-0.5">
+                        {showQuickUnpin ? (
+                            <button
+                                type="button"
+                                className={QUICK_ACTION_BUTTON_CLASS_NAME}
+                                aria-label={t('session.action.unpin')}
+                                title={t('session.action.unpin')}
+                                disabled={quickUnpinPending}
+                                onClick={(event) => void handleQuickUnpin(event)}
+                            >
+                                {quickUnpinPending
+                                    ? <LoaderIcon className="h-4 w-4 animate-spin" />
+                                    : <PinOffIcon className="h-4 w-4" />}
+                            </button>
+                        ) : null}
+                        {showQuickArchive ? (
+                            <button
+                                type="button"
+                                className={QUICK_ACTION_BUTTON_CLASS_NAME}
+                                aria-label={t('session.action.archive')}
+                                title={t('session.action.archive')}
+                                disabled={quickArchivePending}
+                                onClick={() => void handleQuickArchive()}
+                            >
+                                {quickArchivePending
+                                    ? <LoaderIcon className="h-4 w-4 animate-spin" />
+                                    : <ArchiveIcon className="h-4 w-4" />}
+                            </button>
+                        ) : null}
+                    </div>
                 ) : null}
             </div>
 
@@ -1416,10 +1578,12 @@ const SessionItem = memo(function SessionItem(props: {
                 sessionGlobalPinned={Boolean(s.globalPinned)}
                 onSetPinMode={(mode) => void handleSetPinMode(mode)}
                 onRename={() => setRenameOpen(true)}
+                onLinkPr={githubPrAwarenessEnabled ? () => setLinkPrOpen(true) : undefined}
+                linkedPr={linkedPr}
                 onExport={() => setExportOpen(true)}
                 onMarkUnread={() => markSessionUnread(s.id, s.readState)}
                 onForkSession={api && ((supportsCurrentFork && (!s.thinking || supportsCompletedFork)) || supportsArchivedFork)
-                    ? () => setForkOpen(true)
+                    ? () => forkFlow.openFork()
                     : undefined}
                 forkDisabledReason={forkDisabledReason}
                 onArchive={() => setArchiveOpen(true)}
@@ -1430,28 +1594,48 @@ const SessionItem = memo(function SessionItem(props: {
                 anchorPoint={menuAnchorPoint}
             />
 
-            {forkOpen ? (
+            {forkFlow.preview ? (
+                <ForkPreviewDialog
+                    isOpen
+                    view={forkFlow.preview.view}
+                    prefixMayHaveMore={forkFlow.preview.view.prefixTruncated}
+                    stale={forkFlow.stale}
+                    loading={forkFlow.loading}
+                    onCancel={forkFlow.closePreview}
+                    onConfirm={forkFlow.confirmPreview}
+                />
+            ) : null}
+
+            {forkFlow.legacyFallback ? (
                 <ConfirmDialog
                     isOpen={true}
-                    onClose={() => { if (!forkPending) setForkOpen(false) }}
+                    onClose={() => { if (!forkFlow.confirming) forkFlow.closePreview() }}
                     title={t('dialog.sessionFork.title')}
                     description={t(s.thinking && supportsCompletedFork ? 'dialog.sessionFork.completedDescription' : 'dialog.sessionFork.description')}
                     confirmLabel={t('dialog.sessionFork.confirm')}
                     confirmingLabel={t('dialog.sessionFork.confirming')}
-                    isPending={forkPending}
+                    isPending={forkFlow.confirming}
                     destructive
                     centerTitle
+                    onConfirm={forkFlow.confirmLegacy}
+                />
+            ) : null}
+
+            {forkFlow.errorMessage && !forkFlow.preview ? (
+                <ConfirmDialog
+                    isOpen={true}
+                    onClose={forkFlow.closePreview}
+                    title={t('dialog.sessionFork.title')}
+                    description={forkFlow.errorMessage}
+                    confirmLabel={forkFlow.errorWasConnectFailure ? t('button.retry') : t('dialog.reopen.dismiss')}
+                    confirmingLabel={forkFlow.errorWasConnectFailure ? t('button.retry') : t('dialog.reopen.dismiss')}
+                    isPending={forkFlow.loading}
+                    hideCancel
+                    keepOpenAfterConfirm={forkFlow.errorWasConnectFailure}
+                    centerTitle
                     onConfirm={async () => {
-                        if (!api) return
-                        setForkPending(true)
-                        try {
-                            const result = s.thinking && supportsCompletedFork
-                                ? await api.forkConversation(s.id, undefined, true)
-                                : await api.forkConversation(s.id)
-                            onSelect(result.sessionId)
-                        } finally {
-                            setForkPending(false)
-                        }
+                        if (forkFlow.errorWasConnectFailure) forkFlow.retryPreview()
+                        else forkFlow.closePreview()
                     }}
                 />
             ) : null}
@@ -1483,6 +1667,15 @@ const SessionItem = memo(function SessionItem(props: {
                     isPending={isPending}
                 />
             ) : null}
+
+            <LinkPrDialog
+                isOpen={linkPrOpen}
+                onClose={() => setLinkPrOpen(false)}
+                currentPrimaryLabel={primaryPrRef ? `${primaryPrRef.repo}#${primaryPrRef.number}` : null}
+                onUpsert={upsertExternalRef}
+                onRemovePrimary={primaryPrRef ? removePrimaryExternalRef : undefined}
+                isPending={isPending}
+            />
 
             {exportOpen ? (
                 <SessionExportDialog
@@ -1580,6 +1773,15 @@ export function SessionList(props: {
         machinesById = {},
         onNewSessionInDirectory
     } = props
+    const { features } = useFeatures(api)
+    const githubPrAwarenessEnabled = Boolean(features?.githubPrAwareness.enabled)
+    const prClockTick = useMinuteTick(githubPrAwarenessEnabled)
+    // Stable between minute ticks so memoized SessionItem rows do not
+    // remount on unrelated SSE updates when awareness is off (or mid-minute).
+    const prNowMs = useMemo(
+        () => (githubPrAwarenessEnabled ? Date.now() : 0),
+        [prClockTick, githubPrAwarenessEnabled]
+    )
     const { sessionPreviewLimit } = useSessionPreviewLimit()
     const { sessionListStatusMode } = useSessionListStatusMode()
     const { view: listView, setView: setListView } = useSessionListView()
@@ -1611,6 +1813,7 @@ export function SessionList(props: {
     const [contentSearchError, setContentSearchError] = useState(false)
     const [searchExpanded, setSearchExpanded] = useState(false)
     const [markAllReadOpen, setMarkAllReadOpen] = useState(false)
+    const quickUnpinFocusRef = useRef<QuickUnpinFocusTarget | null>(null)
     // Actions-box width is the real icon budget (#2039). Measuring the full
     // row and subtracting a guessed search reserve left empty space after More.
     const headerRowRef = useRef<HTMLDivElement>(null)
@@ -2094,8 +2297,11 @@ export function SessionList(props: {
                     title={t(titleKey)}
                 >
                     <ChevronIcon className="h-3.5 w-3.5 text-[var(--app-hint)] shrink-0" collapsed={collapsed && !isFiltering} />
-                    <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center" aria-hidden="true">
-                        <span className={`h-1.5 w-1.5 rounded-full bg-[var(--app-badge-success-text)] ${pulse ? 'animate-pulse' : ''}`} />
+                    <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                        <LowRatePulseDot
+                            pulse={pulse}
+                            className="h-1.5 w-1.5 rounded-full bg-[var(--app-badge-success-text)]"
+                        />
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">
                         {t(titleKey)}
@@ -2115,7 +2321,10 @@ export function SessionList(props: {
                             return (
                                 <div key={bucketKey}>
                                     <div className={`flex items-center gap-1 px-1 pt-1 pb-0.5 text-[11px] font-medium ${bucket.colorClass}`}>
-                                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full bg-current ${bucket.pulse ? 'animate-pulse' : ''}`} aria-hidden="true" />
+                                        <LowRatePulseDot
+                                            pulse={bucket.pulse}
+                                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-current"
+                                        />
                                         {t(bucket.labelKey)} ({sessions.length})
                                     </div>
                                     {sessions.map((s) => (
@@ -2125,6 +2334,8 @@ export function SessionList(props: {
                                             onSelect={props.onSelect}
                                             showPath={false}
                                             api={api}
+                                            features={features}
+                                            prNowMs={prNowMs}
                                             titleSuggestionAvailable={titleSuggestionAvailable}
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
@@ -2205,6 +2416,8 @@ export function SessionList(props: {
             onSelect={props.onSelect}
             showPath={false}
             api={api}
+            features={features}
+            prNowMs={prNowMs}
             titleSuggestionAvailable={titleSuggestionAvailable}
             selected={s.id === selectedSessionId}
             showDetailedStatus={showDetailedStatus}
@@ -2218,10 +2431,13 @@ export function SessionList(props: {
 
     const renderDirectoryGroup = (group: SessionGroup) => {
         const isCollapsed = isGroupCollapsed(group)
-        // A collapsed group still shows its unread rows, so new output in a
-        // quiet project is never folded out of sight.
-        const collapsedUnreadSessions = isCollapsed && keepUnreadSessionsVisible ? group.sessions.filter(isSessionUnread) : []
         const visibleGroupSessions = getVisibleGroupSessions(group)
+        // A collapsed group still shows its unread rows, so new output in a
+        // quiet project is never folded out of sight. Each row folds on its
+        // own instead of moving to a separate list, so toggling the group
+        // never remounts (and re-animates) the rows that stay visible.
+        const isRowOpen = (s: SessionSummary) => !isCollapsed || (keepUnreadSessionsVisible && isSessionUnread(s))
+        const anyRowOpen = visibleGroupSessions.some(isRowOpen)
         const hiddenSessionCount = group.sessions.length - visibleGroupSessions.length
         const currentLimit = Math.min(
             getGroupVisibleCount(group),
@@ -2264,33 +2480,30 @@ export function SessionList(props: {
                     </span>
                 </ProjectGroupRow>
 
-                {collapsedUnreadSessions.length > 0 ? (
-                    <div data-testid="session-group-unread-peek" className="flex flex-col gap-0.5 ml-3 pl-1 py-1">
-                        {collapsedUnreadSessions.map((s) => (
-                            <div key={s.id} className="contents">
-                                {renderGroupSessionItem(s)}
-                            </div>
-                        ))}
-                    </div>
-                ) : null}
-
-                {/* Sessions */}
-                <CollapsiblePanel open={!isCollapsed}>
-                    <div className="flex flex-col gap-0.5 ml-3 pl-1 py-1">
-                        {visibleGroupSessions.map((s, index) => (
-                            <div key={s.id} className="contents">
-                                {shouldShowPinnedDivider(visibleGroupSessions, index) ? (
+                {/* Sessions. Spacing lives inside the panels so folded rows take no room. */}
+                <div className="flex flex-col ml-3 pl-1" data-open={!isCollapsed || undefined}>
+                    <CollapsiblePanel open={anyRowOpen}>
+                        <div className="h-1" />
+                    </CollapsiblePanel>
+                    {visibleGroupSessions.map((s, index) => (
+                        <CollapsiblePanel key={s.id} open={isRowOpen(s)}>
+                            {shouldShowPinnedDivider(visibleGroupSessions, index) ? (
+                                <CollapsiblePanel open={!isCollapsed}>
                                     <div
                                         data-testid="session-pin-divider"
-                                        className="ml-2.5 mr-2 my-1 border-t border-[var(--app-border)]"
+                                        className="ml-2.5 mr-2 mb-1.5 mt-1 border-t border-[var(--app-border)]"
                                         aria-hidden="true"
                                     />
-                                ) : null}
+                                </CollapsiblePanel>
+                            ) : null}
+                            <div className="pb-0.5">
                                 {renderGroupSessionItem(s)}
                             </div>
-                        ))}
-                        {group.sessions.length > sessionPreviewLimit && (hiddenSessionCount > 0 || canShowFewerSessions) ? (
-                            <div className="ml-2.5 mr-2 my-1 flex gap-1.5">
+                        </CollapsiblePanel>
+                    ))}
+                    {group.sessions.length > sessionPreviewLimit && (hiddenSessionCount > 0 || canShowFewerSessions) ? (
+                        <CollapsiblePanel open={!isCollapsed}>
+                            <div className="ml-2.5 mr-2 mt-1 mb-1.5 flex gap-1.5">
                                 {canShowFewerSessions ? (
                                     <button
                                         type="button"
@@ -2312,9 +2525,12 @@ export function SessionList(props: {
                                     </button>
                                 ) : null}
                             </div>
-                        ) : null}
-                    </div>
-                </CollapsiblePanel>
+                        </CollapsiblePanel>
+                    ) : null}
+                    <CollapsiblePanel open={anyRowOpen}>
+                        <div className="h-0.5" />
+                    </CollapsiblePanel>
+                </div>
             </div>
         )
     }
@@ -2354,6 +2570,92 @@ export function SessionList(props: {
         const setOverrides = isFiltering ? setFilterCollapseOverrides : setCollapseOverrides
         setOverrides(prev => expandSelectedSessionCollapseOverrides(prev, group))
     }, [selectedSessionId, groups, isFiltering])
+
+    // Keep a keyboard-unpinned row reachable when it moves into a collapsed or
+    // truncated destination section, or fall back to a visible row if removed.
+    useLayoutEffect(() => {
+        const target = quickUnpinFocusRef.current
+        if (!target) return
+
+        const activeEl = document.activeElement
+        const activeRowId = activeEl instanceof Element
+            ? activeEl.closest('[data-session-row-id]')?.getAttribute('data-session-row-id')
+            : null
+        if (activeEl && activeEl !== document.body && activeRowId !== target.sessionId) {
+            quickUnpinFocusRef.current = null
+            return
+        }
+
+        if (globalPinnedSessions.some((session) => session.id === target.sessionId)) {
+            if (!target.pending) quickUnpinFocusRef.current = null
+            return
+        }
+
+        const inRunning = [...runningSessions.jobs, ...runningSessions.working, ...runningSessions.pending]
+            .some((session) => session.id === target.sessionId)
+        if (inRunning) {
+            if (runningSectionCollapsed && !isFiltering) {
+                setRunningSectionCollapsed(false)
+                return
+            }
+            if (!target.pending) quickUnpinFocusRef.current = null
+            return
+        }
+
+        const targetGroup = groups.find((group) =>
+            group.sessions.some((session) => session.id === target.sessionId)
+        )
+        if (targetGroup) {
+            const collapsed = isGroupCollapsed(targetGroup)
+            const peekingUnread = collapsed
+                && keepUnreadSessionsVisible
+                && targetGroup.sessions.some((session) => session.id === target.sessionId && isSessionUnread(session))
+            let expanding = false
+            if (collapsed && !peekingUnread) {
+                expanding = true
+                const setOverrides = isFiltering ? setFilterCollapseOverrides : setCollapseOverrides
+                setOverrides((prev) => expandSelectedSessionCollapseOverrides(prev, targetGroup))
+            }
+
+            const targetIndex = targetGroup.sessions.findIndex((session) => session.id === target.sessionId)
+            if (targetIndex >= 0 && !getVisibleGroupSessions(targetGroup).some((session) => session.id === target.sessionId)) {
+                expanding = true
+                let neededLimit = targetIndex + 1
+                for (let i = targetIndex + 1; i < targetGroup.sessions.length; i += 1) {
+                    const s = targetGroup.sessions[i]!
+                    if (s.id === selectedSessionId || (s.active && s.pendingRequestsCount > 0) || previewIsUnread?.(s)) {
+                        neededLimit += 1
+                    }
+                }
+                setSessionVisibleCounts((prev) => {
+                    if (neededLimit <= (prev.get(targetGroup.key) ?? sessionPreviewLimit)) return prev
+                    const next = new Map(prev)
+                    next.set(targetGroup.key, Math.min(neededLimit, targetGroup.sessions.length))
+                    return next
+                })
+            }
+            if (!expanding && !target.pending) {
+                quickUnpinFocusRef.current = null
+            }
+            return
+        }
+
+        if (!activeEl || activeEl === document.body) {
+            const container = scrollContainerRef.current
+            const findVisible = (selector: string) =>
+                Array.from(container?.querySelectorAll<HTMLElement>(selector) ?? [])
+                    .find((el) => !el.closest('.collapsible-panel:not([data-open])'))
+            const fallback = findVisible('button[data-session-scroll-anchor]')
+                ?? findVisible('[role="button"], button')
+            fallback?.focus({ preventScroll: true })
+        }
+        quickUnpinFocusRef.current = null
+    }, [
+        globalPinnedSessions, runningSessions, groups, runningSectionCollapsed,
+        collapseOverrides, filterCollapseOverrides, sessionVisibleCounts,
+        isFiltering, selectedSessionId, keepUnreadSessionsVisible,
+        isSessionUnread, sessionPreviewLimit, previewIsUnread,
+    ])
 
     // Clean up stale collapse overrides
     useEffect(() => {
@@ -2761,6 +3063,7 @@ export function SessionList(props: {
                 </div>
             ) : null}
             <div ref={scrollContainerRef} className="app-scroll-y session-list-scrollbar-left scrollbar-auto-hide min-h-0 flex-1">
+            <QuickUnpinFocusContext.Provider value={quickUnpinFocusRef}>
             <SessionListScrollAnchor sessions={props.sessions} className="mx-auto flex w-full max-w-content flex-col gap-1 pl-1.5 pr-2 pb-2">
                 {props.sessions.length === 0 && !props.isLoading ? (
                     <SessionsEmptyState
@@ -2845,6 +3148,8 @@ export function SessionList(props: {
                                             onSelect={props.onSelect}
                                             showPath={false}
                                             api={api}
+                                            features={features}
+                                            prNowMs={prNowMs}
                                             titleSuggestionAvailable={titleSuggestionAvailable}
                                             selected={s.id === selectedSessionId}
                                             showDetailedStatus={showDetailedStatus}
@@ -2877,6 +3182,7 @@ export function SessionList(props: {
                 {groups.map(renderDirectoryGroup)}
                 {actionOnlyGroups.map(renderActionOnlyGroupHeader)}
             </SessionListScrollAnchor>
+            </QuickUnpinFocusContext.Provider>
             </div>
             </div>
             <ConfirmDialog
