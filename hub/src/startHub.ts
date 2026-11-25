@@ -206,8 +206,8 @@ export async function startHub(options: StartHubOptions = {}): Promise<HubInstan
     syncEngine.setHubOwnerUserId(await getOrCreateOwnerId())
 
     const notificationChannels: NotificationChannel[] = []
-    // All native providers run before Web Push so successful native sends
-    // participate in the existing per-dispatch fallback gate.
+    // Native providers run before Web Push so providers that suppress it
+    // can record successful sends for the current dispatch.
     const nativePushProviders = createNativePushProviders(config, { store })
     for (const provider of nativePushProviders) {
         if (provider.channel) notificationChannels.push(provider.channel)

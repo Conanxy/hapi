@@ -57,7 +57,7 @@ const providers: readonly NativePushProvider[] = [
             if (config.mode === 'off') return { channel: null, status: `off (${config.reason})` }
             const sender = new VivoPushService(config, store)
             return {
-                channel: new NativePushNotificationChannel(sender, store),
+                channel: new NativePushNotificationChannel(sender, store, { suppressWebPushOnDelivery: false }),
                 testSender: sender,
                 status: 'test (online devices only; provider daily quota applies)'
             }

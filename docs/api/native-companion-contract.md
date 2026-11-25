@@ -71,11 +71,11 @@ Other installs, namespaces, Wear and iOS registrations remain unchanged.
 
 The hub dispatches native notifications independently of PWA visibility.
 Android uses direct FCM, an encrypted relay or opt-in vivo test push depending on hub/app configuration;
-iOS uses APNs or the encrypted relay. A successful send to at least one native
-device sets a per-dispatch gate that suppresses Web Push for that event and
-namespace. Missing registrations, missing relay encryption keys, and failed
-sends do not suppress the fallback. Provider acceptance is not a handset
-receipt.
+iOS uses APNs or the encrypted relay. A successful FCM, APNs or native relay
+send to at least one device suppresses Web Push for that event and namespace.
+Successful vivo sends allow Web Push to continue. Missing registrations,
+missing relay encryption keys and failed sends leave the Web Push fallback
+available. Provider acceptance can precede handset delivery.
 
 ### Common notification data
 

@@ -12,7 +12,8 @@ export class NativePushNotificationChannel implements NotificationChannel {
 
     constructor(
         private readonly sender: NativePushSender,
-        private readonly store?: Store
+        store?: Store,
+        private readonly options: { suppressWebPushOnDelivery?: boolean } = {}
     ) {
         this.composer = new NativeNotificationComposer(store)
     }
@@ -95,11 +96,11 @@ export class NativePushNotificationChannel implements NotificationChannel {
         payload: NativePushPayload,
         ctx?: NotificationSendContext
     ): Promise<NativePushResult> {
-        // Native delivery is independent of PWA visibility. Providers own
-        // transport details; successful delivery engages the Web Push gate.
+        // Native delivery is independent of PWA visibility. Each provider
+        // decides whether its successful sends suppress Web Push.
         const result = await this.sender.sendToNamespace(session.namespace, payload)
         const outcome = result ?? { sent: 0, failed: 0, invalidTokens: [] }
-        if (outcome.sent > 0 && ctx?.nativeGate) {
+        if (outcome.sent > 0 && this.options.suppressWebPushOnDelivery !== false && ctx?.nativeGate) {
             ctx.nativeGate.sent = true
         }
         return outcome

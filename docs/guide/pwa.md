@@ -148,10 +148,11 @@ HAPI supports push notifications to alert you when agents need attention.
 
 The [native Android and iOS apps](./native-apps.md#notifications) use FCM and
 APNs. App Store and Google Play builds use encrypted push relay delivery by default; private
-builds need matching provider configuration. If a native provider accepts a
-notification for any device in your namespace, the hub skips the Web Push
-duplicate for that dispatch. Missing registrations or failed sends retain the
-Web Push fallback. Provider acceptance is not a handset receipt. See
+builds need matching provider configuration. If FCM, APNs or the native relay
+accepts a notification for a device in your namespace, the hub skips the Web Push
+duplicate for that dispatch. vivo push can run alongside Web Push. Visible HAPI
+pages can still receive an in-app toast in place of a system notification for
+ready and permission events. See
 [Native app notifications](./notifications.md#native-app-notifications).
 
 ::: tip
