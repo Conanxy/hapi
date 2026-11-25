@@ -16,9 +16,9 @@ import {
     shouldClearPendingScheduleAfterSend,
     shouldClearReasoningEffortForModelChange,
     shouldRouteToScratchlist,
-    isRewindForkFallbackError,
 } from './SessionChat'
 import { ApiError } from '@/api/client'
+import { isRewindForkFallbackError } from '@/hooks/useForkFlow'
 import type { PendingSchedule } from '@/components/AssistantChat/ScheduleTimePicker'
 import type { AttachmentMetadata, DecryptedMessage } from '@/types/api'
 

@@ -107,7 +107,7 @@ android {
         targetSdk = 36
         versionCode = gitCommitCount ?: 1
         // Tracks the hapi CLI/hub release train.
-        versionName = providers.gradleProperty("hapiVersionName").orElse("0.36.5-youngfine.1").get()
+        versionName = providers.gradleProperty("hapiVersionName").orElse("0.36.7-youngfine.1").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VIVO_PUSH_CONFIGURED", (vivoAppId.isNotEmpty()).toString())
         manifestPlaceholders["vivoAppId"] = vivoAppId

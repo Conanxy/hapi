@@ -1,6 +1,6 @@
 {
   "name": "@youngfine/hapi",
-  "version": "0.36.5-youngfine.1",
+  "version": "0.36.7-youngfine.1",
   "description": "Unofficial personal fork of HAPI with custom remote-agent workflow improvements",
   "author": "youngfine (fork maintainer); Kirill Dubovitskiy & weishu (upstream)",
   "license": "AGPL-3.0-only",
@@ -46,8 +46,7 @@
     "dev": "bun src/index.ts",
     "dev:local-server": "bun --env-file .env.dev-local-server src/index.ts",
     "dev:integration-test-env": "bun --env-file .env.integration-test src/index.ts",
-    "release-all": "bun run scripts/release-all.ts",
-    "publish-npm": "bun run scripts/publish-npm.ts"
+    "release-all": "bun run scripts/release-all.ts"
   },
   "dependencies": {
     "@hapi/protocol": "workspace:*",

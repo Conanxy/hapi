@@ -8,9 +8,15 @@
 
 ## 版本与上游基线
 
-- 源码版本为 `0.36.5-youngfine.1`，合入上游标签 `v0.36.5`（`590a9533`）并保留个人二开改动。
+- 源码版本为 `0.36.7-youngfine.1`，合入上游标签 `v0.36.7`（`4e36c995`）并保留个人二开改动。
 - 可通过 `npm view @youngfine/hapi version --registry=https://registry.npmjs.org` 查询 npm 最新发布版本；源码版本可能领先于 npm。
 - npm 主包及五个平台包覆盖 macOS ARM64/x64、Linux ARM64/x64、Windows x64，包含 CLI、Hub 和内嵌网页；原生 iOS、Android 更新已包含在源码中，npm 包不包含 APK 或 iOS 应用构建。
+
+## 0.36.7-youngfine.1 更新内容
+
+- macOS 支持手动开启 Codex Desktop 会话自动同步，Web 改进临时断网后的连接恢复。
+- Claude Code 修复 Bash 权限判断，支持在指定消息分叉和回退会话。
+- 安卓支持折叠项目文件夹，并在界面重建后保留当前聊天。
 
 ## 0.36.5-youngfine.1 更新内容
 

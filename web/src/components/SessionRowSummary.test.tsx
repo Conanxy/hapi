@@ -295,7 +295,7 @@ describe('SessionRowSummary background status', () => {
         expect(container.querySelector('[data-testid="session-presence"]')).toHaveAttribute('data-presence', 'working')
     })
 
-    it('shows unseen output with background-only work using a blue dot', () => {
+    it('shows unseen output with background-only work as a blue spinner', () => {
         const session = makeSummary({ id: 'background-unread', backgroundTaskCount: 1, updatedAt: 2_000 })
         markSessionSeen(session.id, 1_000)
 
@@ -410,7 +410,7 @@ describe('SessionRowSummary attached job progress', () => {
         vi.useRealTimers()
     })
 
-    it('fades the row but keeps a pulsing working badge and job meter after the agent stops', () => {
+    it('shows a stopped agent and a separate fresh job meter after disconnect', () => {
         const { container } = render(
             <I18nProvider>
                 <SessionRowSummary
@@ -438,9 +438,8 @@ describe('SessionRowSummary attached job progress', () => {
         // different things at once: nothing holds this session in memory, and
         // the work is still running.
         const badge = container.querySelector('[data-testid="session-presence"]') as HTMLElement
-        expect(badge).toHaveAttribute('data-presence', 'working')
-        // Working badge + job dot still animate, now via the shared ticker.
-        expect(badge.style.opacity).toBe('1')
+        expect(badge).toHaveAttribute('data-presence', 'stopped')
+        expect(screen.queryByTestId('session-activity')).toBeNull()
 
         const faded = container.querySelector('.opacity-50')
         expect(faded).not.toBeNull()
@@ -607,16 +606,18 @@ describe('SessionRowSummary combined activity and unread indicator', () => {
         expect(screen.queryByTestId('session-activity')).toBeNull()
     })
 
-    it('shows background-only work as a blue dot for both read and unread output', () => {
+    it('shows a blue dot for background work until foreground activity replaces it', () => {
         let session = makeSummary({ thinking: false, backgroundTaskCount: 1, contentRevision: 2 })
         markSessionSeen(session.id, 2)
         const row = () => <I18nProvider><SessionRowSummary session={session} lastSeenVersion={session.contentRevision} /></I18nProvider>
         const view = render(row())
+        const spinner = () => screen.getByTestId('session-activity')
         expect(screen.getByTestId('session-background')).toHaveClass('bg-blue-500')
         expect(screen.queryByTestId('session-activity')).toBeNull()
         expect(screen.queryByTestId('session-unread')).toBeNull()
         expect(screen.getByText('Background demo')).toHaveClass('font-normal')
 
+        // Unseen output leaves the background indicator in place.
         session = { ...session, contentRevision: 3 }
         view.rerender(row())
         expect(screen.getByTestId('session-background')).toHaveClass('bg-blue-500')
@@ -626,14 +627,14 @@ describe('SessionRowSummary combined activity and unread indicator', () => {
 
         session = { ...session, thinking: true }
         view.rerender(row())
-        expect(screen.queryByTestId('session-background')).toBeNull()
-        expect(screen.getByTestId('session-activity')).toBeVisible()
+        expect(spinner()).toHaveAttribute('data-activity', 'foreground')
 
+        // Only once all work has ended does the at-rest unread look appear.
         session = { ...session, thinking: false, backgroundTaskCount: 0 }
         view.rerender(row())
-        expect(screen.queryByTestId('session-background')).toBeNull()
         expect(screen.queryByTestId('session-activity')).toBeNull()
         expect(screen.getByTestId('session-unread')).toHaveClass('bg-[var(--app-fg)]')
+        expect(screen.getByText('Background demo')).toHaveClass('font-semibold')
     })
 
     it('returns to a grey spinner when running content is read, and keeps manual unread blue', () => {
@@ -691,16 +692,15 @@ describe('SessionRowSummary combined activity and unread indicator', () => {
         expect(screen.getByTestId('session-activity').querySelector('svg')).toHaveClass('text-[var(--app-hint)]')
     })
 
-    it('keeps outliving jobs spinning at full contrast after disconnect', () => {
-        const session = makeSummary({ active: false, contentRevision: 2, attachedJob: {
+    it('does not spin for a disconnected agent with an outliving job or stale tool signal', () => {
+        const session = makeSummary({ active: false, derivedToolWork: true, contentRevision: 2, attachedJob: {
             key: 'import', label: 'Import', status: 'running', heartbeatAt: Date.now(),
             startedAt: Date.now(), updatedAt: Date.now(),
         } })
-        const { container } = render(<I18nProvider><SessionRowSummary session={session} /></I18nProvider>)
-        const spinner = screen.getByTestId('session-activity')
-        expect(spinner.querySelector('svg')).toHaveClass('text-blue-500')
-        expect(container.querySelector('.opacity-50')!.contains(spinner)).toBe(false)
-        expect(screen.queryByTestId('session-unread')).toBeNull()
+        render(<I18nProvider><SessionRowSummary session={session} /></I18nProvider>)
+        expect(screen.queryByTestId('session-activity')).toBeNull()
+        expect(screen.getByTestId('session-unread')).toBeInTheDocument()
+        expect(screen.getByTestId('attached-job-progress-bar')).toBeInTheDocument()
     })
 
     it('animates the running spinner and presence badge from the low-rate ticker', () => {
@@ -755,6 +755,25 @@ describe('SessionRowSummary time label', () => {
 
     afterEach(() => {
         vi.useRealTimers()
+    })
+
+    it('shows a stopped session the stop time it is ordered by only where the list orders by it', () => {
+        vi.useFakeTimers()
+        const now = 1_800_000_000_000
+        vi.setSystemTime(now)
+        // Expired after a quiet spell: updatedAt is old, the stop time is recent.
+        const quiet = { updatedAt: now - 12 * 60 * 60_000, activeAt: now - 5 * 60_000, backgroundTaskCount: 0 }
+        const row = (active: boolean, showStoppedTime?: boolean) => (
+            <I18nProvider><SessionRowSummary session={makeSummary({ ...quiet, active })} showStoppedTime={showStoppedTime} /></I18nProvider>
+        )
+        const view = render(row(false, true))
+        expect(screen.getByText('5m ago')).toBeInTheDocument()
+
+        // Other callers (Active first off, mention tooltips) keep the activity time.
+        view.rerender(row(false))
+        expect(screen.getByText('12h ago')).toBeInTheDocument()
+        view.rerender(row(true, true))
+        expect(screen.getByText('12h ago')).toBeInTheDocument()
     })
 
     it('advances the relative time without a parent render', () => {

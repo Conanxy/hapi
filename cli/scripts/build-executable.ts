@@ -213,6 +213,11 @@ export function executableBuildArguments(projectRoot: string, target: string, ou
         '--compile',
         '--no-compile-autoload-dotenv',
         '--env=disable',
+        // Load lazily imported modules on demand and precompile bytecode.
+        '--splitting',
+        '--minify',
+        '--bytecode',
+        '--format=esm',
         // Resolve module locations in the executable's virtual filesystem.
         '--define=__dirname=import.meta.dirname',
         '--define=__filename=import.meta.filename',

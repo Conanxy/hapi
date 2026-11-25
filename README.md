@@ -8,9 +8,15 @@ This project is a personal fork of [tiann/hapi](https://github.com/tiann/hapi).
 
 ## Version and Upstream Baseline
 
-- Source version: `0.36.5-youngfine.1`, integrating upstream tag `v0.36.5` (`590a9533`) and preserving the fork's custom changes.
+- Source version: `0.36.7-youngfine.1`, integrating upstream tag `v0.36.7` (`4e36c995`) and preserving the fork's custom changes.
 - Check the latest published npm version with `npm view @youngfine/hapi version --registry=https://registry.npmjs.org`; the source can be ahead of npm.
 - The npm wrapper and five platform packages cover macOS ARM64/x64, Linux ARM64/x64, and Windows x64, and include the CLI, Hub, and embedded Web client. Native iOS and Android changes are included in the source; npm does not include an APK or an iOS app build.
+
+## What's New in 0.36.7-youngfine.1
+
+- Adds optional automatic syncing for Codex Desktop sessions on macOS and improves Web recovery after temporary connection failures.
+- Updates Claude Code Bash permission handling and adds conversation fork and rewind support.
+- Adds collapsible Android project folders and keeps the open chat after activity recreation.
 
 ## What's New in 0.36.5-youngfine.1
 

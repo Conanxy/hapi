@@ -26,7 +26,7 @@ class PushPayloadTest {
         assertTrue(payload.isTest)
         assertNull(payload.navigationSessionId)
         assertFalse(payload.supportsActions)
-        assertEquals(PushPayload.CHANNEL_TASK_NOTIFICATIONS, payload.channelId)
+        assertEquals(PushPayload.CHANNEL_OTHER, payload.channelId)
         assertFalse(PushPayload.parse(permissionData())!!.isTest)
         assertEquals(permissionData()["sessionId"], PushPayload.parse(permissionData())!!.navigationSessionId)
     }

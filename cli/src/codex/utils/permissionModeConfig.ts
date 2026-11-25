@@ -1,4 +1,4 @@
-import type { CodexPermissionMode } from '@hapi/protocol/types';
+import type { PermissionModeOf, Flavors } from '@hapi/protocol/types';
 import type { ApprovalPolicyPreset, SandboxMode, SandboxPolicy } from '../appServerTypes';
 
 export type CodexPermissionModeConfig = {
@@ -7,7 +7,7 @@ export type CodexPermissionModeConfig = {
     sandboxPolicy: SandboxPolicy;
 };
 
-export type SharedCodexPermissionMode = CodexPermissionMode;
+export type SharedCodexPermissionMode = PermissionModeOf<typeof Flavors.codex>;
 
 /**
  * Native shared Codex (app-server 0.154+) has no HAPI Safe Yolo.
@@ -15,7 +15,7 @@ export type SharedCodexPermissionMode = CodexPermissionMode;
  * uses the same native approval/sandbox policy.
  */
 export function toSharedCodexPermissionMode(
-    mode: CodexPermissionMode | 'safe-yolo' | undefined
+    mode: SharedCodexPermissionMode | 'safe-yolo' | undefined
 ): SharedCodexPermissionMode | undefined {
     if (!mode) {
         return undefined;
@@ -23,7 +23,7 @@ export function toSharedCodexPermissionMode(
     return mode === 'safe-yolo' ? 'default' : mode;
 }
 
-export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): CodexPermissionModeConfig {
+export function resolveCodexPermissionModeConfig(mode: SharedCodexPermissionMode): CodexPermissionModeConfig {
     switch (mode) {
         case 'default':
         case 'autoReview':
@@ -53,7 +53,7 @@ export function resolveCodexPermissionModeConfig(mode: CodexPermissionMode): Cod
     throw new Error(`Unknown permission mode: ${unexpectedMode}`);
 }
 
-export function buildCodexPermissionModeCliArgs(mode: Exclude<CodexPermissionMode, 'default'>): string[] {
+export function buildCodexPermissionModeCliArgs(mode: Exclude<PermissionModeOf<typeof Flavors.codex>, 'default'>): string[] {
     const config = resolveCodexPermissionModeConfig(mode);
     return ['--ask-for-approval', config.approvalPolicy, '--sandbox', config.sandbox];
 }

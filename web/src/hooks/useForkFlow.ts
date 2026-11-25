@@ -63,6 +63,10 @@ type UseForkFlowOptions = {
     onRewindForkSafeFallback?: (messageLocalId: string) => void
 }
 
+export function isRewindForkFallbackError(error: unknown): boolean {
+    return error instanceof ApiError && error.code === 'ambiguous_native_boundary_fork_safe'
+}
+
 export function apiErrorText(error: unknown, fallback: string): string {
     if (error instanceof ApiError && error.body) {
         try {
@@ -180,7 +184,7 @@ export function useForkFlow(options: UseForkFlowOptions): ForkFlow {
                     // Mirror the preview confirm: an ambiguous native boundary
                     // that is fork-safe offers the fork-at-boundary fallback
                     // instead of failing the rewind.
-                    if (error instanceof ApiError && error.code === 'ambiguous_native_boundary_fork_safe') {
+                    if (isRewindForkFallbackError(error)) {
                         closePreview()
                         onRewindForkSafeFallback?.(request.messageLocalId!)
                         return
@@ -246,8 +250,7 @@ export function useForkFlow(options: UseForkFlowOptions): ForkFlow {
                 await fetchPreview(intent, messageLocalId)
                 return
             }
-            if (intent === 'rewind' && error instanceof ApiError
-                && error.code === 'ambiguous_native_boundary_fork_safe') {
+            if (intent === 'rewind' && isRewindForkFallbackError(error)) {
                 closePreview()
                 onRewindForkSafeFallback?.(messageLocalId!)
                 return
