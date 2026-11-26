@@ -77,7 +77,10 @@ export class PushNotificationChannel implements NotificationChannel {
             }
         }
 
-        await this.deliverWebOrToast(session, payload, ctx, 'ready')
+        if (!await this.deliverWebOrToast(session, payload, ctx, 'ready')) {
+            this.logBranch('ready', session.namespace, 'web-push-opted-in')
+            await this.pushService.sendToNamespace(session.namespace, payload, true)
+        }
     }
 
     private async deliverWebOrToast(
@@ -85,10 +88,10 @@ export class PushNotificationChannel implements NotificationChannel {
         payload: PushPayload,
         ctx: NotificationSendContext | undefined,
         method: 'permission' | 'ready'
-    ): Promise<void> {
+    ): Promise<boolean> {
         if (ctx?.nativeGate?.sent) {
             this.logBranch(method, session.namespace, 'defer-to-native', 'fcm-delivered-this-dispatch')
-            return
+            return false
         }
 
         const url = payload.data?.url ?? this.buildSessionPath(session.id)
@@ -104,7 +107,7 @@ export class PushNotificationChannel implements NotificationChannel {
             })
             if (delivered > 0) {
                 this.logBranch(method, session.namespace, 'sse-toast-delivered', `count=${delivered}`)
-                return
+                return false
             }
             this.logBranch(method, session.namespace, 'sse-toast-zero', 'visible but delivered=0')
         } else {
@@ -113,6 +116,7 @@ export class PushNotificationChannel implements NotificationChannel {
 
         this.logBranch(method, session.namespace, 'web-push-fired')
         await this.pushService.sendToNamespace(session.namespace, payload)
+        return true
     }
 
     async sendModelError(

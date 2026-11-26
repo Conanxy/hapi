@@ -1218,6 +1218,8 @@ export default {
   'settings.display.appBadge': '任务栏未读角标',
   'settings.notifications.title': '通知',
   'settings.notifications.push': '在此设备上接收推送通知',
+  'settings.notifications.alwaysNotifyOnReady': '任务完成时始终发送系统通知',
+  'settings.notifications.alwaysNotifyOnReady.description': '即使 HAPI 窗口开着或手机也收到推送，此设备仍会收到系统通知。',
   'settings.notifications.description': 'Agent 需要输入或完成一轮任务时通知我。iPhone 和 iPad 请先将 HAPI 添加到主屏幕。',
   'settings.notifications.unsupported': '此环境无法使用推送通知。请使用 HTTPS 和受支持的浏览器；iPhone 和 iPad 请从主屏幕打开已安装的应用。',
   'settings.notifications.denied': '通知已被阻止，请在浏览器或设备设置中允许通知。',

@@ -5,6 +5,7 @@ import type { WebAppEnv } from '../middleware/auth'
 
 const subscriptionSchema = z.object({
     endpoint: z.string().min(1),
+    alwaysNotifyOnReady: z.boolean().optional(),
     keys: z.object({
         p256dh: z.string().min(1),
         auth: z.string().min(1)
@@ -30,11 +31,12 @@ export function createPushRoutes(store: Store, vapidPublicKey: string): Hono<Web
         }
 
         const namespace = c.get('namespace')
-        const { endpoint, keys } = parsed.data
+        const { endpoint, keys, alwaysNotifyOnReady } = parsed.data
         store.push.addPushSubscription(namespace, {
             endpoint,
             p256dh: keys.p256dh,
-            auth: keys.auth
+            auth: keys.auth,
+            alwaysNotifyOnReady
         })
 
         return c.json({ ok: true })

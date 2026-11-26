@@ -1113,6 +1113,8 @@ export default {
   'settings.display.appBadge': 'タスクバーの未読バッジ',
   'settings.notifications.title': '通知',
   'settings.notifications.push': 'このデバイスでのプッシュ通知',
+  'settings.notifications.alwaysNotifyOnReady': 'ターン完了時に常にシステム通知を送信',
+  'settings.notifications.alwaysNotifyOnReady.description': 'HAPI を開いているときや、スマートフォンにも通知が届くときに、このデバイスでもシステム通知を受け取ります。',
   'settings.notifications.description': 'エージェントが入力を必要としたとき、またはターンを完了したときに通知します。iPhone と iPad では、先に HAPI をホーム画面にインストールしてください。',
   'settings.notifications.unsupported': 'ここではプッシュ通知を利用できません。HTTPS と対応ブラウザを使用してください。iPhone と iPad では、ホーム画面にインストールしたアプリを開いてください。',
   'settings.notifications.denied': '通知がブロックされています。ブラウザまたはデバイスの設定で許可してください。',

@@ -7,6 +7,7 @@ const push = vi.hoisted(() => ({
     isSupported: true,
     permission: 'default' as NotificationPermission,
     isSubscribed: false,
+    alwaysNotifyOnReady: false,
     requestPermission: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn(),
 }))
 vi.mock('@/hooks/usePushNotifications', () => ({ usePushNotifications: () => push }))
@@ -17,6 +18,7 @@ describe('push notification settings', () => {
         push.isSupported = true
         push.permission = 'default'
         push.isSubscribed = false
+        push.alwaysNotifyOnReady = false
         push.requestPermission.mockReset().mockResolvedValue(true)
         push.subscribe.mockReset().mockResolvedValue(true)
         push.unsubscribe.mockReset().mockResolvedValue(true)
@@ -27,6 +29,17 @@ describe('push notification settings', () => {
         fireEvent.click(screen.getByRole('checkbox', { name: 'Push notifications on this device' }))
         expect(push.requestPermission).toHaveBeenCalledOnce()
         await waitFor(() => expect(push.subscribe).toHaveBeenCalledOnce())
+    })
+
+    it('offers the completion preference only while push is subscribed', async () => {
+        const view = render(<I18nProvider><PushNotificationsControl /></I18nProvider>)
+        const completion = () => screen.getByRole('checkbox', { name: 'Always send a system notification when a turn finishes' })
+        expect(completion()).toBeDisabled()
+        push.isSubscribed = true
+        view.rerender(<I18nProvider><PushNotificationsControl /></I18nProvider>)
+        fireEvent.click(completion())
+        await waitFor(() => expect(push.subscribe).toHaveBeenCalledWith(true))
+        expect(push.requestPermission).not.toHaveBeenCalled()
     })
 
     it('unsubscribes when switched off and explains blocked permission', async () => {

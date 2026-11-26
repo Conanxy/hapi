@@ -137,6 +137,13 @@ HAPI supports push notifications to alert you when agents need attention.
 2. Tap **Allow** in the browser permission prompt. On iPhone and iPad, first add HAPI to the Home Screen and open it there.
 3. If permission was blocked, allow notifications in the browser or device settings. You can turn off the subscription from the same HAPI setting.
 
+### Always send a system notification when a turn finishes
+
+Enable this option under **Settings → General → Notifications** after enabling
+push notifications on the current device. This browser's subscription receives
+a completion push even when HAPI shows an in-app toast or a native provider
+also accepts the notification. System notification permissions still apply.
+
 ### Notification Types
 
 | Type | When Sent |
@@ -149,10 +156,11 @@ HAPI supports push notifications to alert you when agents need attention.
 The [native Android and iOS apps](./native-apps.md#notifications) use FCM and
 APNs. App Store and Google Play builds use encrypted push relay delivery by default; private
 builds need matching provider configuration. If FCM, APNs or the native relay
-accepts a notification for a device in your namespace, the hub skips the Web Push
-duplicate for that dispatch. vivo push can run alongside Web Push. Visible HAPI
-pages can still receive an in-app toast in place of a system notification for
-ready and permission events. See
+accepts a notification for a device in your namespace, the hub skips default
+Web Push delivery for that dispatch. vivo push can run alongside Web Push.
+Visible HAPI pages can receive an in-app toast in place of default Web Push
+for ready and permission events. Subscriptions that opt in to always receiving
+ready notifications still get Web Push for those events. See
 [Native app notifications](./notifications.md#native-app-notifications).
 
 ::: tip

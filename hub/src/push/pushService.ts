@@ -38,15 +38,21 @@ export class PushService {
         webPush.setVapidDetails(this.subject, this.vapidKeys.publicKey, this.vapidKeys.privateKey)
     }
 
-    async sendToNamespace(namespace: string, payload: PushPayload): Promise<{ sent: number; failed: number; subscriptions: number }> {
+    async sendToNamespace(namespace: string, payload: PushPayload, onlyAlwaysNotifyOnReady = false): Promise<{ sent: number; failed: number; subscriptions: number }> {
         const subscriptions = this.store.push.getPushSubscriptionsByNamespace(namespace)
+            .filter(subscription => !onlyAlwaysNotifyOnReady || subscription.alwaysNotifyOnReady)
         if (subscriptions.length === 0) {
             return { sent: 0, failed: 0, subscriptions: 0 }
         }
 
         const body = JSON.stringify(payload)
+        // A tag replaces a previous notification for the same session.
+        // Opted-in devices need a fresh alert for each completion.
+        const readyBody = payload.data?.type === 'ready'
+            ? JSON.stringify({ ...payload, tag: undefined })
+            : body
         const results = await Promise.all(subscriptions.map((subscription) => {
-            return this.sendToSubscription(namespace, subscription, body)
+            return this.sendToSubscription(namespace, subscription, subscription.alwaysNotifyOnReady ? readyBody : body)
         }))
         let sent = 0
         let failed = 0

@@ -29,6 +29,7 @@ function base64UrlToUint8Array(base64Url: string): Uint8Array {
  */
 const PUSH_VAPID_KEY_STORAGE = 'hapi.push.vapidKey'
 const PUSH_DISABLED_STORAGE = 'hapi.push.disabled'
+const ALWAYS_NOTIFY_ON_READY_STORAGE = 'hapi.push.alwaysNotifyOnReady'
 const PUSH_SUBSCRIPTION_CHANGED = 'hapi.push.subscriptionChanged'
 
 // Subscription hooks are mounted independently in the app and settings.
@@ -59,6 +60,23 @@ function setPushNotificationsDisabled(disabled: boolean): void {
     } catch { /* Browser subscription remains the source of truth. */ }
 }
 
+function readAlwaysNotifyOnReady(): boolean | undefined {
+    try {
+        const value = localStorage.getItem(ALWAYS_NOTIFY_ON_READY_STORAGE)
+        return value === 'true' ? true : value === 'false' ? false : undefined
+    } catch {
+        return undefined
+    }
+}
+
+function saveAlwaysNotifyOnReady(enabled: boolean): void {
+    try {
+        localStorage.setItem(ALWAYS_NOTIFY_ON_READY_STORAGE, String(enabled))
+    } catch {
+        // The hub already saved the preference for the current endpoint.
+    }
+}
+
 function readStoredVapidKey(): string | null {
     try {
         return localStorage.getItem(PUSH_VAPID_KEY_STORAGE)
@@ -79,6 +97,7 @@ export function usePushNotifications(api: ApiClient | null) {
     const [isSupported, setIsSupported] = useState(false)
     const [permission, setPermission] = useState<NotificationPermission>('default')
     const [isSubscribed, setIsSubscribed] = useState(false)
+    const [alwaysNotifyOnReady, setAlwaysNotifyOnReady] = useState(() => readAlwaysNotifyOnReady() ?? false)
     const refreshVersion = useRef(0)
 
     const refreshSubscription = useCallback(async () => {
@@ -115,11 +134,20 @@ export function usePushNotifications(api: ApiClient | null) {
     }, [api])
 
     useEffect(() => {
-        const onChange = () => { void refreshSubscription() }
+        const refreshPreference = () => setAlwaysNotifyOnReady(readAlwaysNotifyOnReady() ?? false)
+        const onChange = () => {
+            refreshPreference()
+            void refreshSubscription()
+        }
+        const onStorage = (event: StorageEvent) => {
+            if (event.key === ALWAYS_NOTIFY_ON_READY_STORAGE || event.key === null) refreshPreference()
+        }
         window.addEventListener(PUSH_SUBSCRIPTION_CHANGED, onChange)
+        window.addEventListener('storage', onStorage)
         void refreshSubscription()
         return () => {
             window.removeEventListener(PUSH_SUBSCRIPTION_CHANGED, onChange)
+            window.removeEventListener('storage', onStorage)
             refreshVersion.current += 1
         }
     }, [refreshSubscription])
@@ -137,7 +165,7 @@ export function usePushNotifications(api: ApiClient | null) {
         return result === 'granted'
     }, [])
 
-    const subscribe = useCallback(async (): Promise<boolean> => {
+    const subscribe = useCallback(async (readyPreference?: boolean): Promise<boolean> => {
         if (!api || !isPushSupported()) {
             return false
         }
@@ -199,9 +227,11 @@ export function usePushNotifications(api: ApiClient | null) {
 
             return await queueRegistration(async () => {
                 if (version !== unsubscribeVersion) return false
+                const preference = readyPreference ?? readAlwaysNotifyOnReady()
                 await api.subscribePushNotifications({
                     endpoint,
-                    keys: { p256dh, auth }
+                    keys: { p256dh, auth },
+                    ...(preference === undefined ? {} : { alwaysNotifyOnReady: preference })
                 })
                 if (version !== unsubscribeVersion) {
                     // The delete may have reached the hub before this older
@@ -215,6 +245,10 @@ export function usePushNotifications(api: ApiClient | null) {
                 writeStoredVapidKey(publicKey)
                 setPushNotificationsDisabled(false)
                 setIsSubscribed(true)
+                if (readyPreference !== undefined) {
+                    saveAlwaysNotifyOnReady(readyPreference)
+                    setAlwaysNotifyOnReady(readyPreference)
+                }
                 return true
             })
         } catch (error) {
@@ -259,6 +293,7 @@ export function usePushNotifications(api: ApiClient | null) {
         isSupported,
         permission,
         isSubscribed,
+        alwaysNotifyOnReady,
         requestPermission,
         subscribe,
         unsubscribe

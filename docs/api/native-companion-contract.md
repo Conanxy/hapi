@@ -72,7 +72,9 @@ Other installs, namespaces, Wear and iOS registrations remain unchanged.
 The hub dispatches native notifications independently of PWA visibility.
 Android uses direct FCM, an encrypted relay or opt-in vivo test push depending on hub/app configuration;
 iOS uses APNs or the encrypted relay. A successful FCM, APNs or native relay
-send to at least one device suppresses Web Push for that event and namespace.
+send to at least one device suppresses the default Web Push for that event
+and namespace. Web subscriptions with **Always send a system notification
+when a turn finishes** enabled still receive Web Push for ready events.
 Successful vivo sends allow Web Push to continue. Missing registrations,
 missing relay encryption keys and failed sends leave the Web Push fallback
 available. Provider acceptance can precede handset delivery.
@@ -363,8 +365,9 @@ hub over the authenticated registration call. Operators who prefer zero
 third-party involvement beyond Apple run `HAPI_IOS_PUSH=apns`.
 
 Like the FCM channel, iOS push fires unconditionally for registered devices
-and suppresses the Web Push fallback for the namespace when a send succeeds
-(one OS notification, not two).
+and suppresses the default Web Push fallback for the namespace when a send
+succeeds. Web subscriptions that opt in to always receiving ready
+notifications still receive those events.
 
 ---
 
@@ -406,10 +409,10 @@ persisted in the owner-only settings file; protect its backups as secrets. The h
 values may use `~`.
 
 The native push channel is **opt-in**: operators who don't run a companion
-app see no behavior change. When at least one native send succeeds for a
-notification, Web Push suppresses that notification for the namespace
-to avoid double-notifying (one in the native app, one from the
-PWA service worker). PWA-only operators are unaffected.
+app keep their existing Web Push delivery. A successful FCM, APNs or native
+relay send suppresses default Web Push delivery for the namespace. Web
+subscriptions that opt in to always receiving ready notifications still
+receive those events.
 
 ---
 

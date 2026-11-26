@@ -404,7 +404,7 @@ internal and must never be used by clients.
 | Codex Desktop import | `/api/codex/*` (`hub/src/web/routes/codexDesktop.ts`) | Desktop-import tooling |
 | Local session import | `GET /api/{pi,opencode,claude}/sessions?machineId=&cwd=`, `POST /api/{pi,opencode,claude}/import-sessions` `{sessionIds, machineId?, cwd?}` (`hub/src/web/routes/localSessions/`) | Import registry for local agent histories; Codex uses `/api/codex/*` |
 | Work graph | `/api/work-graph/*` (`hub/src/web/routes/workGraph.ts`) | Web-only feature |
-| Web Push | `/api/push/*` (`hub/src/web/routes/push.ts`) | Browser Push API; natives use `/api/devices/register` (Android/iOS push contract) |
+| Web Push | `/api/push/*` (`hub/src/web/routes/push.ts`) | Browser Push API; `POST /api/push/subscribe` accepts optional `alwaysNotifyOnReady` (boolean, per subscription). Omitting it preserves the stored preference. Native apps use `/api/devices/register`. |
 | Hub settings write | `PUT /api/hub-settings` | Owner-only hub administration |
 | Session jobs | `GET /api/sessions/:id/jobs`, `PUT`/`PATCH`/`DELETE /api/sessions/:id/jobs/:jobKey`, `POST /api/sessions/:id/jobs/:jobKey/clear-stale` (requires the observed `startedAt`, `heartbeatAt` and, when present, `runId`; returns 409 if changed or still fresh) | Web job meters and controls; see [Session jobs](../../guide/session-jobs.md) |
 | Telegram | `POST /api/bind` | Telegram Mini App binding only |

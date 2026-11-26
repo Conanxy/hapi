@@ -1220,6 +1220,8 @@ export default {
   'settings.display.appBadge': 'Taskbar unread badge',
   'settings.notifications.title': 'Notifications',
   'settings.notifications.push': 'Push notifications on this device',
+  'settings.notifications.alwaysNotifyOnReady': 'Always send a system notification when a turn finishes',
+  'settings.notifications.alwaysNotifyOnReady.description': 'Receive a system notification on this device even when HAPI is open or a phone also receives a push.',
   'settings.notifications.description': 'Notify me when an agent needs input or finishes a turn. On iPhone and iPad, install HAPI on the Home Screen first.',
   'settings.notifications.unsupported': 'Push notifications are unavailable here. Use HTTPS and a supported browser; on iPhone and iPad, open the installed Home Screen app.',
   'settings.notifications.denied': 'Notifications are blocked. Allow them in your browser or device settings.',

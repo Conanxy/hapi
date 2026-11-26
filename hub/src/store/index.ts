@@ -60,7 +60,7 @@ export {
     WorkGraphValidationError
 } from './workGraph'
 
-const SCHEMA_VERSION: number = 36
+const SCHEMA_VERSION: number = 37
 const REQUIRED_TABLES = [
     'sessions',
     'machines',
@@ -410,6 +410,7 @@ export class Store {
             33: () => this.migrateFromV33ToV34(),
             34: () => this.migrateFromV34ToV35(),
             35: () => this.migrateFromV35ToV36(),
+            36: () => this.migrateFromV36ToV37(),
         })
 
         if (currentVersion === 0) {
@@ -454,6 +455,7 @@ export class Store {
             this.migrateFromV33ToV34()
             this.migrateFromV34ToV35()
             this.migrateFromV35ToV36()
+            this.migrateFromV36ToV37()
             this.ensureUsageScanParserVersion()
             this.setUserVersion(SCHEMA_VERSION)
             return
@@ -583,6 +585,7 @@ export class Store {
                 endpoint TEXT NOT NULL,
                 p256dh TEXT NOT NULL,
                 auth TEXT NOT NULL,
+                always_notify_on_ready INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL,
                 UNIQUE(namespace, endpoint)
             );
@@ -1395,6 +1398,14 @@ export class Store {
     /** v35→v36: WebAuthn credentials that can be exchanged for a web JWT. */
     private migrateFromV35ToV36(): void {
         this.db.exec(PASSKEY_CREDENTIALS_TABLE_SQL)
+    }
+
+    /** v36→v37: opt in to completion notifications per Web Push subscription. */
+    private migrateFromV36ToV37(): void {
+        const columns = this.db.prepare('PRAGMA table_info(push_subscriptions)').all() as Array<{ name: string }>
+        if (columns.length > 0 && !columns.some(column => column.name === 'always_notify_on_ready')) {
+            this.db.exec('ALTER TABLE push_subscriptions ADD COLUMN always_notify_on_ready INTEGER NOT NULL DEFAULT 0')
+        }
     }
 
     private ensureUsageScanParserVersion(): void {

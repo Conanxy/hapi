@@ -227,6 +227,7 @@ export type PushSubscriptionKeys = {
 export type PushSubscriptionPayload = {
     endpoint: string
     keys: PushSubscriptionKeys
+    alwaysNotifyOnReady?: boolean
 }
 
 export type PushUnsubscribePayload = {

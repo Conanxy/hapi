@@ -1020,6 +1020,8 @@ export default {
   'settings.display.appBadge': 'Значок непрочитанного на панели задач',
   'settings.notifications.title': 'Уведомления',
   'settings.notifications.push': 'Push-уведомления на этом устройстве',
+  'settings.notifications.alwaysNotifyOnReady': 'Всегда отправлять системное уведомление по завершении',
+  'settings.notifications.alwaysNotifyOnReady.description': 'Получайте системное уведомление на этом устройстве, даже если HAPI открыт или уведомление также приходит на телефон.',
   'settings.notifications.description': 'Уведомлять, когда агент ожидает ввода или завершает работу. На iPhone и iPad сначала добавьте HAPI на экран «Домой».',
   'settings.notifications.unsupported': 'Push-уведомления недоступны. Используйте HTTPS и поддерживаемый браузер; на iPhone и iPad откройте приложение с экрана «Домой».',
   'settings.notifications.denied': 'Уведомления заблокированы. Разрешите их в настройках браузера или устройства.',

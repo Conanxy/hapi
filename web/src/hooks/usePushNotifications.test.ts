@@ -128,6 +128,30 @@ describe('usePushNotifications VAPID rotation', () => {
         expect(localStorage.getItem(VAPID_STORAGE_KEY)).toBe(CURRENT_VAPID_KEY)
     })
 
+    it('saves the completion preference after registration and preserves it during recovery', async () => {
+        const existing = createSubscription('https://push.test/current', true)
+        const manager = setupPushEnvironment(existing, existing)
+        const api = createApi()
+        localStorage.setItem(VAPID_STORAGE_KEY, CURRENT_VAPID_KEY)
+        const { result } = renderHook(() => usePushNotifications(api as unknown as ApiClient))
+
+        await waitFor(() => expect(result.current.isSubscribed).toBe(true))
+        await act(async () => { expect(await result.current.subscribe(true)).toBe(true) })
+        expect(result.current.alwaysNotifyOnReady).toBe(true)
+        await act(async () => { expect(await result.current.subscribe()).toBe(true) })
+        expect(api.subscribePushNotifications).toHaveBeenLastCalledWith(expect.objectContaining({
+            endpoint: existing.endpoint, alwaysNotifyOnReady: true
+        }))
+        expect(manager.subscribe).not.toHaveBeenCalled()
+        api.subscribePushNotifications.mockRejectedValueOnce(new Error('offline'))
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+        await act(async () => { expect(await result.current.subscribe(false)).toBe(false) })
+        expect(result.current.alwaysNotifyOnReady).toBe(true)
+        expect(consoleError).toHaveBeenCalled()
+        await act(async () => { expect(await result.current.subscribe(false)).toBe(true) })
+        expect(result.current.alwaysNotifyOnReady).toBe(false)
+    })
+
     it('persists an explicit unsubscribe so startup will not re-enable it', async () => {
         const existing = createSubscription('https://push.test/current', true)
         const manager = setupPushEnvironment(existing, existing)

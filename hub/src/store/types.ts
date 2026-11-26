@@ -74,6 +74,7 @@ export type StoredPushSubscription = {
     endpoint: string
     p256dh: string
     auth: string
+    alwaysNotifyOnReady: boolean
     createdAt: number
 }
 

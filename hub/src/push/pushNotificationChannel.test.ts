@@ -20,8 +20,8 @@ describe('PushNotificationChannel', () => {
         const toasts: unknown[] = []
         const channel = new PushNotificationChannel(
             {
-                sendToNamespace: async (namespace: string, payload: PushPayload) => {
-                    pushed.push({ namespace, payload })
+                sendToNamespace: async (namespace: string, payload: PushPayload, optedInOnly = false) => {
+                    if (!optedInOnly) pushed.push({ namespace, payload })
                 }
             } as never,
             {
@@ -46,8 +46,8 @@ describe('PushNotificationChannel', () => {
         const pushed: Array<{ namespace: string; payload: PushPayload }> = []
         const channel = new PushNotificationChannel(
             {
-                sendToNamespace: async (namespace: string, payload: PushPayload) => {
-                    pushed.push({ namespace, payload })
+                sendToNamespace: async (namespace: string, payload: PushPayload, optedInOnly = false) => {
+                    if (!optedInOnly) pushed.push({ namespace, payload })
                 }
             } as never,
             {
@@ -69,6 +69,33 @@ describe('PushNotificationChannel', () => {
         await channel.sendReady(createSession(), ctx)
 
         expect(pushed).toHaveLength(0)
+    })
+
+    it.each([
+        { visible: true, nativeSent: false, toastCount: 1, optedInOnly: true },
+        { visible: false, nativeSent: true, toastCount: 0, optedInOnly: true },
+        { visible: false, nativeSent: false, toastCount: 0, optedInOnly: false }
+    ])('sends ready Web Push only once (visible=$visible, native=$nativeSent)', async ({
+        visible, nativeSent, toastCount, optedInOnly
+    }) => {
+        const deliveries: boolean[] = []
+        let toasts = 0
+        const channel = new PushNotificationChannel(
+            {
+                sendToNamespace: async (_namespace: string, payload: PushPayload, optedIn = false) => {
+                    expect(payload.data?.type).toBe('ready')
+                    deliveries.push(optedIn)
+                }
+            } as never,
+            { sendToast: async () => ++toasts } as never,
+            { hasVisibleConnection: () => visible } as never,
+            ''
+        )
+
+        await channel.sendReady(createSession(), { nativeGate: { sent: nativeSent } })
+
+        expect(deliveries).toEqual([optedInOnly])
+        expect(toasts).toBe(toastCount)
     })
 
     it('falls back to web-push when native gate is unset (FCM failed or absent)', async () => {
@@ -116,12 +143,12 @@ describe('PushNotificationChannel', () => {
     })
 
     it('also skips SSE in-page toast when native gate reports delivery', async () => {
-        const pushed: Array<{ namespace: string; payload: PushPayload }> = []
+        const pushed: Array<{ type: string | undefined; optedInOnly: boolean }> = []
         const toasts: unknown[] = []
         const channel = new PushNotificationChannel(
             {
-                sendToNamespace: async (namespace: string, payload: PushPayload) => {
-                    pushed.push({ namespace, payload })
+                sendToNamespace: async (_namespace: string, payload: PushPayload, optedInOnly = false) => {
+                    pushed.push({ type: payload.data?.type, optedInOnly })
                 }
             } as never,
             {
@@ -143,11 +170,8 @@ describe('PushNotificationChannel', () => {
             agentState: { requests: { 'r-1': { tool: 'Bash', arguments: {} } } }
         }), ctx)
 
-        // Even when the PWA is foreground/visible, the operator asked to mute
-        // it - the in-page React toast and the OS web-push are both dropped
-        // when an FCM companion is on the wrist.
         expect(toasts).toHaveLength(0)
-        expect(pushed).toHaveLength(0)
+        expect(pushed).toEqual([{ type: 'ready', optedInOnly: true }])
     })
 
     it('sendModelError defers when nativeGate.sent is true', async () => {
